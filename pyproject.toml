@@ -1,0 +1,30 @@
+[project]
+name = "tokencause"
+version = "0.1.0"
+description = "Find why AI coding agent sessions get expensive."
+readme = "README.md"
+requires-python = ">=3.10"
+license = "MIT"
+authors = [
+  { name = "TokenCause contributors" }
+]
+keywords = ["llm", "agents", "observability", "litellm", "cost", "tokens"]
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Environment :: Console",
+  "Intended Audience :: Developers",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3 :: Only",
+  "Topic :: Software Development :: Debuggers",
+]
+dependencies = []
+
+[project.scripts]
+tokencause = "tokencause:main"
+
+[tool.setuptools]
+py-modules = ["tokencause"]
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
