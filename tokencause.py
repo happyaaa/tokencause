@@ -4,9 +4,13 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
+import re
+import sqlite3
 import statistics
 import sys
+from datetime import datetime, timezone
 from collections import Counter, defaultdict
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -32,6 +36,23 @@ CHEAP_STEP_HINTS = (
     "classify",
     "route",
     "plan",
+)
+
+FILE_REF_RE = re.compile(
+    r"(?:\.{0,2}/|~?/|[A-Za-z0-9_.-]+/)[A-Za-z0-9_./-]+\.(?:py|ts|tsx|js|jsx|json|md|toml|yaml|yml|lock|txt|sql|css|html|sh)"
+)
+
+EXPENSIVE_FILE_HINTS = (
+    "package-lock.json",
+    "pnpm-lock.yaml",
+    "yarn.lock",
+    "poetry.lock",
+    "generated",
+    "fixture",
+    "fixtures",
+    "snapshot",
+    "schema",
+    ".min.",
 )
 
 
@@ -87,6 +108,60 @@ class Analysis:
     findings: list[Finding] = field(default_factory=list)
     recommendations: list[Recommendation] = field(default_factory=list)
     estimated_savings_usd: float = 0.0
+
+
+@dataclass
+class CodexThread:
+    id: str
+    title: str
+    rollout_path: Path
+    cwd: str
+    updated_at: int
+    tokens_used: int = 0
+
+
+@dataclass
+class CodexContentEvent:
+    category: str
+    tokens: int
+    preview: str
+    timestamp: str = ""
+    file_refs: tuple[str, ...] = ()
+    command: str = ""
+    content_hash: str = ""
+
+
+@dataclass
+class CodexExplainReport:
+    thread: CodexThread
+    content_events: list[CodexContentEvent]
+    usage_events: list[dict[str, int]]
+    category_tokens: dict[str, int]
+    file_tokens: dict[str, int]
+    command_tokens: dict[str, int]
+    repeated_hashes: dict[str, int]
+    long_tool_outputs: list[CodexContentEvent]
+    failure_events: list[CodexContentEvent]
+
+    @property
+    def observable_tokens(self) -> int:
+        return sum(event.tokens for event in self.content_events)
+
+    @property
+    def model_total_tokens(self) -> int:
+        return sum(event.get("total_tokens", 0) for event in self.usage_events)
+
+    @property
+    def model_input_tokens(self) -> int:
+        return sum(event.get("input_tokens", 0) for event in self.usage_events)
+
+    @property
+    def cached_input_tokens(self) -> int:
+        return sum(event.get("cached_input_tokens", 0) for event in self.usage_events)
+
+    @property
+    def model_output_tokens(self) -> int:
+        return sum(event.get("output_tokens", 0) for event in self.usage_events)
 
 
 def as_int(value: Any, default: int = 0) -> int:
@@ -271,6 +346,303 @@ def load_jsonl(path: Path, parser: str = "generic") -> list[TraceEvent]:
             else:
                 events.append(parse_event(raw, index))
     return events
+
+
+def estimate_tokens(text: str) -> int:
+    if not text:
+        return 0
+    # Cheap local estimate. Exact model tokenizers are intentionally not required for local-first use.
+    return max(1, len(text) // 4)
+
+
+def short_preview(text: str, limit: int = 180) -> str:
+    text = re.sub(r"\s+", " ", text).strip()
+    if len(text) <= limit:
+        return text
+    return text[: limit - 1].rstrip() + "..."
+
+
+def content_hash(text: str) -> str:
+    normalized = re.sub(r"\s+", " ", text).strip()
+    if not normalized:
+        return ""
+    return hashlib.sha1(normalized.encode("utf-8")).hexdigest()[:16]
+
+
+def extract_file_refs(text: str) -> tuple[str, ...]:
+    return tuple(sorted(set(FILE_REF_RE.findall(text or ""))))
+
+
+def command_from_arguments(arguments: Any) -> str:
+    if isinstance(arguments, dict):
+        return str(arguments.get("cmd") or arguments.get("command") or "")
+    if not isinstance(arguments, str):
+        return ""
+    try:
+        parsed = json.loads(arguments)
+    except json.JSONDecodeError:
+        return arguments[:160]
+    if isinstance(parsed, dict):
+        return str(parsed.get("cmd") or parsed.get("command") or "")
+    return ""
+
+
+def codex_state_db(codex_home: Path | None = None) -> Path:
+    home = codex_home or Path.home() / ".codex"
+    return home / "state_5.sqlite"
+
+
+def load_codex_threads(codex_home: Path | None = None, limit: int = 20) -> list[CodexThread]:
+    db_path = codex_state_db(codex_home)
+    if not db_path.exists():
+        raise FileNotFoundError(f"Codex state database not found: {db_path}")
+    query = """
+        select id, title, rollout_path, cwd, updated_at, tokens_used
+        from threads
+        where rollout_path is not null and rollout_path != ''
+        order by updated_at desc
+        limit ?
+    """
+    with sqlite3.connect(db_path) as connection:
+        rows = connection.execute(query, (limit,)).fetchall()
+    return [
+        CodexThread(
+            id=str(row[0]),
+            title=str(row[1] or ""),
+            rollout_path=Path(str(row[2])),
+            cwd=str(row[3] or ""),
+            updated_at=as_int(row[4]),
+            tokens_used=as_int(row[5]),
+        )
+        for row in rows
+    ]
+
+
+def pick_codex_thread(codex_home: Path | None = None, last: bool = False, thread_id: str | None = None) -> CodexThread:
+    threads = load_codex_threads(codex_home, limit=200)
+    if thread_id:
+        for thread in threads:
+            if thread.id.startswith(thread_id):
+                return thread
+        raise ValueError(f"Codex thread not found: {thread_id}")
+    if last:
+        if not threads:
+            raise ValueError("No Codex threads found")
+        return threads[0]
+    raise ValueError("Pass --last or --thread-id")
+
+
+def classify_codex_event(record: dict[str, Any], previous_call_commands: dict[str, str]) -> CodexContentEvent | None:
+    timestamp = str(record.get("timestamp") or "")
+    record_type = record.get("type")
+    payload = record.get("payload") if isinstance(record.get("payload"), dict) else {}
+
+    if record_type == "event_msg" and payload.get("type") == "user_message":
+        text = str(payload.get("message") or "")
+        return build_codex_content_event("user_message", text, timestamp)
+
+    if record_type == "event_msg" and payload.get("type") == "agent_message":
+        text = str(payload.get("message") or "")
+        return build_codex_content_event("assistant_message", text, timestamp)
+
+    if record_type == "response_item" and payload.get("type") == "message":
+        parts = payload.get("content")
+        text = ""
+        if isinstance(parts, list):
+            text = "\n".join(str(part.get("text") or "") for part in parts if isinstance(part, dict))
+        return build_codex_content_event("assistant_message", text, timestamp)
+
+    if record_type == "response_item" and payload.get("type") in ("function_call", "custom_tool_call"):
+        call_id = str(payload.get("call_id") or "")
+        name = str(payload.get("name") or "tool")
+        command = command_from_arguments(payload.get("arguments") or payload.get("input"))
+        if call_id and command:
+            previous_call_commands[call_id] = command
+        text = f"{name} {command}".strip()
+        return build_codex_content_event("tool_call", text, timestamp, command=command)
+
+    if record_type == "response_item" and payload.get("type") in ("function_call_output", "custom_tool_call_output"):
+        call_id = str(payload.get("call_id") or "")
+        output = str(payload.get("output") or "")
+        command = previous_call_commands.get(call_id, "")
+        category = "tool_output"
+        lower = f"{command}\n{output}".lower()
+        if any(hint in lower for hint in ("traceback", "error", "failed", "exception")):
+            category = "error_log"
+        elif any(hint in lower for hint in ("pytest", "unittest", "test", "failures", "passed")):
+            category = "test_log"
+        return build_codex_content_event(category, output, timestamp, command=command)
+
+    if record_type == "event_msg" and payload.get("type") == "token_count":
+        return None
+
+    return None
+
+
+def build_codex_content_event(
+    category: str,
+    text: str,
+    timestamp: str,
+    command: str = "",
+) -> CodexContentEvent | None:
+    if not text:
+        return None
+    return CodexContentEvent(
+        category=category,
+        tokens=estimate_tokens(text),
+        preview=short_preview(text),
+        timestamp=timestamp,
+        file_refs=extract_file_refs(text),
+        command=command,
+        content_hash=content_hash(text),
+    )
+
+
+def parse_codex_rollout(thread: CodexThread) -> CodexExplainReport:
+    if not thread.rollout_path.exists():
+        raise FileNotFoundError(f"Codex rollout file not found: {thread.rollout_path}")
+
+    content_events: list[CodexContentEvent] = []
+    usage_events: list[dict[str, int]] = []
+    previous_call_commands: dict[str, str] = {}
+
+    with thread.rollout_path.open("r", encoding="utf-8") as file:
+        for line in file:
+            stripped = line.strip()
+            if not stripped:
+                continue
+            try:
+                record = json.loads(stripped)
+            except json.JSONDecodeError:
+                continue
+            if not isinstance(record, dict):
+                continue
+            payload = record.get("payload") if isinstance(record.get("payload"), dict) else {}
+            if record.get("type") == "event_msg" and payload.get("type") == "token_count":
+                usage = get_path(payload, ("info", "last_token_usage"), {})
+                if isinstance(usage, dict):
+                    usage_events.append({key: as_int(value) for key, value in usage.items()})
+                continue
+            event = classify_codex_event(record, previous_call_commands)
+            if event is not None:
+                content_events.append(event)
+
+    category_tokens: dict[str, int] = defaultdict(int)
+    file_tokens: dict[str, int] = defaultdict(int)
+    command_tokens: dict[str, int] = defaultdict(int)
+    hash_counter: Counter[str] = Counter()
+    for event in content_events:
+        category_tokens[event.category] += event.tokens
+        if event.content_hash:
+            hash_counter[event.content_hash] += 1
+        for file_ref in event.file_refs:
+            file_tokens[file_ref] += event.tokens
+        if event.command:
+            command_tokens[event.command] += event.tokens
+
+    long_tool_outputs = sorted(
+        [event for event in content_events if event.category in ("tool_output", "test_log", "error_log") and event.tokens >= 800],
+        key=lambda event: event.tokens,
+        reverse=True,
+    )
+    failure_events = [
+        event
+        for event in content_events
+        if event.category == "error_log" or any(word in event.preview.lower() for word in ("error", "failed", "traceback"))
+    ]
+
+    return CodexExplainReport(
+        thread=thread,
+        content_events=content_events,
+        usage_events=usage_events,
+        category_tokens=dict(sorted(category_tokens.items(), key=lambda row: row[1], reverse=True)),
+        file_tokens=dict(sorted(file_tokens.items(), key=lambda row: row[1], reverse=True)),
+        command_tokens=dict(sorted(command_tokens.items(), key=lambda row: row[1], reverse=True)),
+        repeated_hashes={key: count for key, count in hash_counter.items() if count > 1},
+        long_tool_outputs=long_tool_outputs,
+        failure_events=failure_events,
+    )
+
+
+def render_codex_scan(threads: list[CodexThread]) -> str:
+    lines = ["TokenCause Codex sessions", ""]
+    if not threads:
+        return "No Codex sessions found."
+    for thread in threads:
+        updated = datetime.fromtimestamp(thread.updated_at, tz=timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+        title = short_preview(thread.title, 80)
+        lines.append(f"- {thread.id[:8]}  {updated}  {thread.tokens_used} tokens  {title}")
+    return "\n".join(lines)
+
+
+def render_codex_explain(report: CodexExplainReport) -> str:
+    lines = [
+        "TokenCause Codex explain",
+        f"session: {report.thread.id}",
+        f"title: {short_preview(report.thread.title, 120)}",
+        f"cwd: {report.thread.cwd}",
+        f"rollout: {report.thread.rollout_path}",
+        "",
+        "usage counters:",
+        f"- thread tokens_used: {report.thread.tokens_used}",
+        f"- summed model total tokens: {report.model_total_tokens}",
+        f"- summed model input tokens: {report.model_input_tokens}",
+        f"- summed cached input tokens: {report.cached_input_tokens}",
+        f"- summed model output tokens: {report.model_output_tokens}",
+        f"- observable transcript tokens: {report.observable_tokens}",
+        "",
+        "token breakdown from observable transcript:",
+    ]
+    total = report.observable_tokens or 1
+    for category, tokens in top_items(report.category_tokens, 8):
+        lines.append(f"- {category}: {tokens} tokens ({tokens / total:.0%})")
+
+    lines.extend(["", "top files/artifacts:"])
+    for file_ref, tokens in top_items(report.file_tokens, 8):
+        marker = " expensive-file" if any(hint in file_ref.lower() for hint in EXPENSIVE_FILE_HINTS) else ""
+        lines.append(f"- {file_ref}: {tokens} tokens{marker}")
+    if not report.file_tokens:
+        lines.append("- none detected")
+
+    lines.extend(["", "top commands:"])
+    for command, tokens in top_items(report.command_tokens, 5):
+        lines.append(f"- {short_preview(command, 120)}: {tokens} tokens")
+    if not report.command_tokens:
+        lines.append("- none detected")
+
+    lines.extend(["", "cost drivers:"])
+    if report.repeated_hashes:
+        repeats = sum(count - 1 for count in report.repeated_hashes.values())
+        lines.append(f"- repeated context: {len(report.repeated_hashes)} repeated chunks, {repeats} duplicate appearances")
+    if report.long_tool_outputs:
+        top = report.long_tool_outputs[0]
+        lines.append(f"- long tool output: largest output is {top.tokens} tokens ({short_preview(top.command or top.preview, 120)})")
+    if report.failure_events:
+        lines.append(f"- retry/failure surface: {len(report.failure_events)} error-like outputs")
+    if not report.repeated_hashes and not report.long_tool_outputs and not report.failure_events:
+        lines.append("- no obvious high-signal cost drivers detected")
+
+    lines.extend(["", "recommendations:"])
+    recommendations = codex_recommendations(report)
+    if recommendations:
+        lines.extend(f"- {item}" for item in recommendations)
+    else:
+        lines.append("- No specific recommendation yet.")
+    return "\n".join(lines)
+
+
+def codex_recommendations(report: CodexExplainReport) -> list[str]:
+    recommendations: list[str] = []
+    if report.repeated_hashes:
+        recommendations.append("Compact or split sessions when repeated context starts accumulating.")
+    if report.long_tool_outputs:
+        recommendations.append("Truncate long command/test output; keep the error summary and last relevant lines.")
+    expensive_files = [name for name in report.file_tokens if any(hint in name.lower() for hint in EXPENSIVE_FILE_HINTS)]
+    if expensive_files:
+        recommendations.append(f"Ignore or summarize expensive files such as {', '.join(expensive_files[:3])}.")
+    if report.failure_events:
+        recommendations.append("Deduplicate repeated failures and avoid rerunning identical commands without changing state.")
+    return recommendations[:5]
 
 
 def analyze(events: list[TraceEvent], budget_usd: float | None = None) -> Analysis:
@@ -637,6 +1009,35 @@ def command_analyze_litellm(args: argparse.Namespace) -> int:
     return run_analysis_command(args, "litellm")
 
 
+def command_codex_scan(args: argparse.Namespace) -> int:
+    try:
+        threads = load_codex_threads(Path(args.codex_home).expanduser() if args.codex_home else None, limit=args.limit)
+    except (OSError, sqlite3.Error) as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 1
+    print(render_codex_scan(threads))
+    return 0
+
+
+def command_codex_explain(args: argparse.Namespace) -> int:
+    try:
+        codex_home = Path(args.codex_home).expanduser() if args.codex_home else None
+        thread = pick_codex_thread(codex_home, last=args.last, thread_id=args.thread_id)
+        report = parse_codex_rollout(thread)
+    except (OSError, sqlite3.Error, ValueError) as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 1
+    output = render_codex_explain(report)
+    if args.out:
+        out_path = Path(args.out)
+        out_path.parent.mkdir(parents=True, exist_ok=True)
+        out_path.write_text(output + "\n", encoding="utf-8")
+    print(output)
+    if args.out:
+        print(f"\nreport: {args.out}")
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="tokencause",
@@ -657,6 +1058,21 @@ def build_parser() -> argparse.ArgumentParser:
     litellm_parser.add_argument("--out", help="Write a Markdown report to this path.")
     litellm_parser.add_argument("--markdown", action="store_true", help="Print Markdown instead of console summary.")
     litellm_parser.set_defaults(func=command_analyze_litellm)
+
+    codex_parser = subparsers.add_parser("codex", help="Analyze local Codex Desktop/CLI sessions.")
+    codex_subparsers = codex_parser.add_subparsers(dest="codex_command", required=True)
+
+    codex_scan_parser = codex_subparsers.add_parser("scan", help="List recent Codex sessions.")
+    codex_scan_parser.add_argument("--codex-home", help="Codex home directory. Defaults to ~/.codex.")
+    codex_scan_parser.add_argument("--limit", type=int, default=10, help="Number of sessions to list.")
+    codex_scan_parser.set_defaults(func=command_codex_scan)
+
+    codex_explain_parser = codex_subparsers.add_parser("explain", help="Explain why a Codex session used tokens.")
+    codex_explain_parser.add_argument("--codex-home", help="Codex home directory. Defaults to ~/.codex.")
+    codex_explain_parser.add_argument("--last", action="store_true", help="Explain the most recently updated Codex session.")
+    codex_explain_parser.add_argument("--thread-id", help="Explain a specific Codex thread id or id prefix.")
+    codex_explain_parser.add_argument("--out", help="Write the explanation to this path.")
+    codex_explain_parser.set_defaults(func=command_codex_explain)
 
     return parser
 

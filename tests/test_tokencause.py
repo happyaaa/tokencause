@@ -1,8 +1,9 @@
 import tempfile
 import unittest
+import sqlite3
 from pathlib import Path
 
-from tokencause import analyze, load_jsonl, parse_event
+from tokencause import analyze, load_codex_threads, parse_codex_rollout, load_jsonl, parse_event
 
 
 class TokenCauseTests(unittest.TestCase):
@@ -65,6 +66,42 @@ class TokenCauseTests(unittest.TestCase):
         self.assertEqual(events[0].cost_usd, 0.25)
         self.assertIn("超过预算", titles)
         self.assertTrue(result.recommendations)
+
+    def test_codex_scan_and_rollout_explain(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            codex_home = root / ".codex"
+            codex_home.mkdir()
+            rollout = codex_home / "rollout.jsonl"
+            rollout.write_text(
+                "\n".join(
+                    [
+                        '{"timestamp":"2026-06-12T00:00:00Z","type":"event_msg","payload":{"type":"user_message","message":"Please fix src/app.py"}}',
+                        '{"timestamp":"2026-06-12T00:00:01Z","type":"response_item","payload":{"type":"function_call","name":"exec_command","arguments":"{\\"cmd\\":\\"pytest tests/test_app.py\\"}","call_id":"c1"}}',
+                        '{"timestamp":"2026-06-12T00:00:02Z","type":"response_item","payload":{"type":"function_call_output","call_id":"c1","output":"ERROR failed tests/test_app.py\\nTraceback\\n' + ("x" * 4000) + '"}}',
+                        '{"timestamp":"2026-06-12T00:00:03Z","type":"event_msg","payload":{"type":"token_count","info":{"last_token_usage":{"input_tokens":1000,"cached_input_tokens":500,"output_tokens":100,"total_tokens":1100}}}}',
+                    ]
+                ),
+                encoding="utf-8",
+            )
+            db = codex_home / "state_5.sqlite"
+            with sqlite3.connect(db) as connection:
+                connection.execute(
+                    "create table threads (id text, title text, rollout_path text, cwd text, updated_at integer, tokens_used integer)"
+                )
+                connection.execute(
+                    "insert into threads values (?, ?, ?, ?, ?, ?)",
+                    ("thread-1", "Fix app", str(rollout), str(root), 100, 1100),
+                )
+
+            threads = load_codex_threads(codex_home)
+            report = parse_codex_rollout(threads[0])
+
+        self.assertEqual(len(threads), 1)
+        self.assertEqual(report.model_total_tokens, 1100)
+        self.assertTrue(report.long_tool_outputs)
+        self.assertTrue(report.failure_events)
+        self.assertIn("tests/test_app.py", report.file_tokens)
 
 
 if __name__ == "__main__":

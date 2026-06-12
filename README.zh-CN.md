@@ -98,10 +98,42 @@ recommended actions:
 
 TokenCause 当前支持：
 
+- Codex Desktop/CLI 本地会话。
 - 通用 JSONL trace。
 - LiteLLM proxy/log JSONL。
 
 `examples/` 里的文件是假数据，只用于快速试跑 CLI。真实使用时应该指向你自己的 LiteLLM 或 agent trace 日志。
+
+## Codex 会话
+
+列出最近的本地 Codex 会话：
+
+```bash
+tokencause codex scan
+```
+
+解释最近更新的会话：
+
+```bash
+tokencause codex explain --last
+```
+
+解释指定 thread：
+
+```bash
+tokencause codex explain --thread-id 019eb90f
+```
+
+Codex adapter 会读取 `~/.codex/state_5.sqlite` 找到 session metadata 和每个 session 的 rollout JSONL。它优先使用 Codex 自带的 token counters，然后做本地 transcript 分析：
+
+- observable transcript token breakdown
+- top files/artifacts
+- top commands
+- repeated content chunks
+- long tool outputs
+- error-like outputs
+
+整个过程只在本地运行，不上传对话数据。
 
 ## 通用 Trace 格式
 
@@ -156,14 +188,6 @@ LiteLLM adapter 会读取：
 
 ## Roadmap
 
-第一个 milestone 是 Codex Session Doctor：
-
-```bash
-tokencause codex scan
-tokencause codex explain --last
-tokencause codex report --out dashboard.html
-```
-
 计划中的 analyzers：
 
 - `RepeatedContextAnalyzer`
@@ -175,7 +199,6 @@ tokencause codex report --out dashboard.html
 
 后续数据源：
 
-- Codex session JSONL。
 - Claude Code local logs。
 - Claude Code OpenTelemetry export。
 - LangSmith export。

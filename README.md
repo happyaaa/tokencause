@@ -98,10 +98,42 @@ The current reports are intentionally diagnosis-first. A dashboard can show tren
 
 TokenCause currently supports:
 
+- Codex Desktop/CLI local sessions.
 - Generic JSONL traces.
 - LiteLLM proxy/log JSONL.
 
 These examples are fake demo data for trying the CLI. In real usage, point TokenCause at your actual LiteLLM or agent trace logs.
+
+## Codex Sessions
+
+List recent local Codex sessions:
+
+```bash
+tokencause codex scan
+```
+
+Explain the most recently updated session:
+
+```bash
+tokencause codex explain --last
+```
+
+Explain a specific thread:
+
+```bash
+tokencause codex explain --thread-id 019eb90f
+```
+
+The Codex adapter reads `~/.codex/state_5.sqlite` to find session metadata and each session's rollout JSONL. It uses Codex token counters when present, then adds local transcript analysis for:
+
+- observable transcript token breakdown
+- top files/artifacts
+- top commands
+- repeated content chunks
+- long tool outputs
+- error-like outputs
+
+This is local-only and does not upload conversation data.
 
 ## Generic Trace Format
 
@@ -156,14 +188,6 @@ If your LiteLLM logs do not include `metadata.step`, `metadata.context_hash`, or
 
 ## Roadmap
 
-Milestone 1 is Codex Session Doctor:
-
-```bash
-tokencause codex scan
-tokencause codex explain --last
-tokencause codex report --out dashboard.html
-```
-
 Planned analyzers:
 
 - `RepeatedContextAnalyzer`
@@ -175,7 +199,6 @@ Planned analyzers:
 
 Future sources:
 
-- Codex session JSONL.
 - Claude Code local logs.
 - Claude Code OpenTelemetry export.
 - LangSmith export.
