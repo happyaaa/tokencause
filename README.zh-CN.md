@@ -188,6 +188,8 @@ LiteLLM adapter 会读取：
 
 ## Roadmap
 
+当前产品计划和 milestone 拆解见 [docs/PLAN.md](docs/PLAN.md)。
+
 计划中的 analyzers：
 
 - `RepeatedContextAnalyzer`

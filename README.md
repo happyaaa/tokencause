@@ -188,6 +188,8 @@ If your LiteLLM logs do not include `metadata.step`, `metadata.context_hash`, or
 
 ## Roadmap
 
+See [docs/PLAN.md](docs/PLAN.md) for the current product plan and milestone breakdown.
+
 Planned analyzers:
 
 - `RepeatedContextAnalyzer`
