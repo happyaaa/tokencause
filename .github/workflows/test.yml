@@ -23,9 +23,8 @@ jobs:
       - run: tokencause dashboard --demo --out /tmp/tokencause-dashboard-demo.html
       - run: tokencause demo-site --out /tmp/tokencause-demo-site
       - run: tokencause doctor --json | python -m json.tool
-      - run: tokencause analyze examples/sample_trace.jsonl --budget 2
-      - run: tokencause analyze examples/sample_trace.jsonl --budget 2 --json | python -m json.tool
-      - run: tokencause analyze-litellm examples/litellm_sample.jsonl --budget 2 --json | python -m json.tool
-      - run: tokencause import --from-ccusage examples/ccusage_sample.json --budget 2 --json | python -m json.tool
+      - run: tokencause analyze examples/tokencause_trace.jsonl --budget 2
+      - run: tokencause analyze examples/tokencause_trace.jsonl --budget 2 --json | python -m json.tool
+      - run: tokencause analyze examples/tokencause_trace.jsonl --budget 2 --markdown
       - run: tokencause claude import-otel examples/claude_otel_sample.json --budget 2 --json | python -m json.tool
       - run: python -m unittest discover -s tests

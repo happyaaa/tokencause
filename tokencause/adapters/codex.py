@@ -154,7 +154,11 @@ def codex_state_db(codex_home: Path | None = None) -> Path:
 def load_codex_threads(codex_home: Path | None = None, limit: int = 20) -> list[CodexThread]:
     db_path = codex_state_db(codex_home)
     if not db_path.exists():
-        raise FileNotFoundError(f"Codex state database not found: {db_path}")
+        raise FileNotFoundError(
+            f"Codex state database not found: {db_path}. "
+            "Run Codex once or pass --codex-home. "
+            "Try `tokencause codex scan`, then `tokencause codex explain --last`."
+        )
     query = """
         select id, title, rollout_path, cwd, updated_at, tokens_used
         from threads

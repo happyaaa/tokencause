@@ -309,7 +309,11 @@ def read_claude_session_cwd(path: Path) -> str:
 def load_claude_sessions(claude_home: Path | None = None, limit: int = 20) -> list[ClaudeSession]:
     root = claude_projects_dir(claude_home)
     if not root.exists():
-        raise FileNotFoundError(f"Claude projects directory not found: {root}")
+        raise FileNotFoundError(
+            f"Claude projects directory not found: {root}. "
+            "Run Claude Code once or pass --claude-home. "
+            "Try `tokencause claude scan`, then `tokencause claude explain --last`."
+        )
     sessions: list[ClaudeSession] = []
     for path in root.glob("*/*.jsonl"):
         try:
