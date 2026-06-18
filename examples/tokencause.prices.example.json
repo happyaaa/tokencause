@@ -1,0 +1,13 @@
+{
+  "codex": {
+    "input_price_per_mtok": 0.0,
+    "cached_input_price_per_mtok": 0.0,
+    "output_price_per_mtok": 0.0
+  },
+  "claude": {
+    "input_price_per_mtok": 0.0,
+    "cache_write_price_per_mtok": 0.0,
+    "cache_read_price_per_mtok": 0.0,
+    "output_price_per_mtok": 0.0
+  }
+}

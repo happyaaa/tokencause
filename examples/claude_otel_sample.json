@@ -1,0 +1,68 @@
+{
+  "resourceMetrics": [
+    {
+      "scopeMetrics": [
+        {
+          "metrics": [
+            {
+              "name": "claude_code.token.usage",
+              "sum": {
+                "dataPoints": [
+                  {
+                    "asInt": "12000",
+                    "attributes": [
+                      {"key": "session.id", "value": {"stringValue": "demo-session"}},
+                      {"key": "model", "value": {"stringValue": "claude-sonnet-4"}},
+                      {"key": "type", "value": {"stringValue": "input"}}
+                    ]
+                  },
+                  {
+                    "asInt": "1400",
+                    "attributes": [
+                      {"key": "session.id", "value": {"stringValue": "demo-session"}},
+                      {"key": "model", "value": {"stringValue": "claude-sonnet-4"}},
+                      {"key": "type", "value": {"stringValue": "output"}}
+                    ]
+                  }
+                ]
+              }
+            },
+            {
+              "name": "claude_code.cost.usage",
+              "sum": {
+                "dataPoints": [
+                  {
+                    "asDouble": 0.18,
+                    "attributes": [
+                      {"key": "session.id", "value": {"stringValue": "demo-session"}},
+                      {"key": "model", "value": {"stringValue": "claude-sonnet-4"}}
+                    ]
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "resourceLogs": [
+    {
+      "scopeLogs": [
+        {
+          "logRecords": [
+            {
+              "body": {"stringValue": "src/app.py\nfailed assertion\nfailed assertion\nfailed assertion"},
+              "attributes": [
+                {"key": "event.name", "value": {"stringValue": "claude_code.tool_result"}},
+                {"key": "session.id", "value": {"stringValue": "demo-session"}},
+                {"key": "tool.name", "value": {"stringValue": "pytest"}},
+                {"key": "file.path", "value": {"stringValue": "src/app.py"}}
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

@@ -1,33 +1,24 @@
 # TokenCause
 
+[![tests](https://github.com/happyaaa/tokencause/actions/workflows/test.yml/badge.svg)](https://github.com/happyaaa/tokencause/actions/workflows/test.yml)
+
 [中文文档](README.zh-CN.md)
 
 Find why your AI coding session got expensive.
 
-TokenCause is a local-first CLI for token cost root-cause analysis. It helps explain where tokens went in Claude Code, Codex, LiteLLM, and other AI coding or agent sessions: repeated context, long command output, expensive files, retry loops, and model mismatch.
+TokenCause is a local-first CLI for token cost root-cause analysis. It helps explain where tokens went in Claude Code, Codex, and other AI coding or agent sessions: repeated context, long command output, expensive files, retry loops, and model mismatch.
 
 Most usage tools tell you how much you spent. TokenCause tells you why.
 
+![TokenCause demo dashboard](docs/assets/demo-dashboard.png)
+
 ## Why TokenCause
 
-Tools like [ccusage](https://github.com/ryoppippi/ccusage) are excellent for local usage accounting across coding agent CLIs. They answer questions like:
-
-- How many tokens did I use today?
-- Which coding CLI used the most tokens?
-- Which sessions, days, or projects were most expensive?
-
-TokenCause focuses on the next layer:
+TokenCause focuses on the diagnostic layer that usage accounting tools usually do not answer:
 
 - Why did this session get expensive?
 - Which files, commands, retries, or repeated contexts drove the cost?
 - What would I change in the workflow to avoid the same cost pattern next time?
-
-In short:
-
-```text
-ccusage    -> usage accounting
-TokenCause -> cost root-cause analysis
-```
 
 ## What It Detects
 
@@ -40,42 +31,99 @@ TokenCause -> cost root-cause analysis
 
 ## Quick Start
 
+Fastest demo, with no local Codex or Claude Code history required:
+
 Run from source:
 
 ```bash
 git clone https://github.com/happyaaa/tokencause.git
 cd tokencause
-python3 tokencause.py analyze examples/sample_trace.jsonl --budget 2
+python3 tokencause.py serve --demo
 ```
 
-Or install the local CLI:
+Or install the local CLI first:
 
 ```bash
-python3 -m pip install -e .
-tokencause analyze examples/sample_trace.jsonl --budget 2
+python3 -m venv .venv
+source .venv/bin/activate
+python -m pip install -e .
+tokencause serve --demo
 ```
 
-Analyze a LiteLLM JSONL log:
+Then point TokenCause at real local sessions:
 
 ```bash
-tokencause analyze-litellm examples/litellm_sample.jsonl --budget 2 --out reports/litellm_report.md
+tokencause doctor
+tokencause serve
 ```
 
-Print a Markdown report:
+`serve` automatically uses recent local Codex sessions when available, otherwise recent Claude Code sessions. It writes a local dashboard site under `reports/tokencause-site` and serves it at `http://127.0.0.1:8787/` by default.
+
+If you only want static files or JSON without running a server:
 
 ```bash
-tokencause analyze examples/sample_trace.jsonl --budget 2 --markdown
+tokencause dashboard --session-reports
+tokencause dashboard --json
 ```
+
+`dashboard` writes a local HTML dashboard to `reports/tokencause-dashboard.html` by default.
+
+The dashboard starts with a diagnosis, not just a table: the likely top cost driver, why it happened, the workflow pattern behind it, the next action, and how to avoid the same token waste next time.
+
+Session reports separate token scopes: provider/model billed counters, observable transcript tokens, cache tokens, and TokenCause's estimated waste signal. Estimated waste is diagnostic, not a billing total.
+
+Check what local sources TokenCause can see:
+
+```bash
+tokencause doctor
+tokencause doctor --json
+```
+
+Check the installed CLI version:
+
+```bash
+tokencause --version
+```
+
+Analyze a standalone TokenCause session trace when you have one:
+
+```bash
+tokencause analyze examples/tokencause_trace.jsonl --budget 2
+```
+
+Print a Markdown report from a TokenCause session trace:
+
+```bash
+tokencause analyze examples/tokencause_trace.jsonl --budget 2 --markdown
+```
+
+Print machine-readable JSON for scripts, CI, or your own dashboard:
+
+```bash
+tokencause dashboard --json
+tokencause analyze examples/tokencause_trace.jsonl --budget 2 --json
+```
+
+All JSON outputs include `schema_version` and `version` at the root so downstream tools can handle format changes separately from CLI releases. See [docs/JSON_OUTPUT.md](docs/JSON_OUTPUT.md) for the output contract.
+
+No server needed? Generate demo/static artifacts instead:
+
+```bash
+tokencause dashboard --demo
+tokencause demo-site
+```
+
+More demo commands are in [docs/DEMO.md](docs/DEMO.md).
 
 ## Example Output
 
 ```text
 TokenCause
-input: examples/litellm_sample.jsonl
+input: examples/tokencause_trace.jsonl
 events: 5
 total cost: $2.5200
-total tokens: 67600
-total latency: 86.0s
+total tokens: 86100
+total latency: 101.0s
 estimated savings: $1.8900
 budget: $2.0000
 
@@ -92,17 +140,30 @@ recommended actions:
 - Add budget guards to retries
 ```
 
-The current reports are intentionally diagnosis-first. A dashboard can show trends, but the first useful question is usually: why did this session get expensive?
+The current reports are intentionally diagnosis-first. A dashboard can show trends, but the first useful question is usually: why did this session get expensive? TokenCause keeps the observability layer visible, then turns the largest cost driver into a workflow diagnosis.
 
 ## Current Inputs
 
 TokenCause currently supports:
 
 - Codex Desktop/CLI local sessions.
-- Generic JSONL traces.
-- LiteLLM proxy/log JSONL.
+- Claude Code local JSONL sessions.
+- Claude Code OpenTelemetry JSON/JSONL export.
+- TokenCause session trace JSONL for advanced integrations.
 
-These examples are fake demo data for trying the CLI. In real usage, point TokenCause at your actual LiteLLM or agent trace logs.
+These examples are fake demo data for trying the CLI. In real usage, point TokenCause at your actual agent trace logs.
+
+## Current Status
+
+TokenCause is alpha but usable for local diagnosis. The strongest path today is Codex local session analysis, followed by Claude Code local sessions and Claude OpenTelemetry exports. TokenCause session trace JSONL is an advanced integration path, but it is only as diagnostic as the metadata it contains.
+
+See [docs/LIMITATIONS.md](docs/LIMITATIONS.md) for current boundaries, including the difference between billed/model tokens, observable transcript tokens, cache tokens, and estimated waste.
+
+## Privacy
+
+TokenCause is local-first. It reads local session files, trace exports, and optional price config files from paths you pass in or from standard local Codex/Claude directories. It does not send conversation data, source code, traces, or reports to any hosted service.
+
+Generated reports and `.tokencause-cache` files may contain local paths, command output previews, and session metadata. See [SECURITY.md](SECURITY.md) before sharing reports, caches, or filing issues with real traces.
 
 ## Codex Sessions
 
@@ -110,12 +171,14 @@ List recent local Codex sessions:
 
 ```bash
 tokencause codex scan
+tokencause codex scan --json
 ```
 
 Explain the most recently updated session:
 
 ```bash
 tokencause codex explain --last
+tokencause codex explain --last --json
 ```
 
 Explain a specific thread:
@@ -124,28 +187,133 @@ Explain a specific thread:
 tokencause codex explain --thread-id 019eb90f
 ```
 
+Estimate dollar cost with your own token prices:
+
+```bash
+tokencause codex explain --last \
+  --input-price-per-mtok 2.00 \
+  --cached-input-price-per-mtok 0.50 \
+  --output-price-per-mtok 8.00
+```
+
+Or keep prices in a local JSON file:
+
+```bash
+cp examples/tokencause.prices.example.json tokencause.prices.json
+tokencause codex overview --limit 20 --price-config tokencause.prices.json
+```
+
+Write a local HTML diagnosis report:
+
+```bash
+tokencause codex report --last --out reports/codex-report.html
+open reports/codex-report.html
+```
+
+Write a local HTML overview across recent sessions:
+
+```bash
+tokencause codex overview --limit 20 --session-reports --out reports/codex-overview.html
+open reports/codex-overview.html
+tokencause codex overview --limit 20 --json
+```
+
+`codex overview` caches parsed sessions under `.tokencause-cache/codex` so repeated overview runs do not reparse every rollout file. It prints cache hit/miss counts and parse timing after each run. Use `--no-cache` to force a fresh parse. Cache files are local and gitignored, but they may contain sensitive local diagnosis metadata.
+
+TokenCause does not hard-code Codex model prices because they change and local Codex rollout files may not include model names. Pass the price flags above, or `--price-config`, when you want an estimate. CLI price flags override the config file.
+
 The Codex adapter reads `~/.codex/state_5.sqlite` to find session metadata and each session's rollout JSONL. It uses Codex token counters when present, then adds local transcript analysis for:
 
 - observable transcript token breakdown
+- command output categories: test, build, install, search, other, and error
 - top files/artifacts
+- repeated files/artifacts
 - top commands
 - repeated content chunks
 - long tool outputs
 - error-like outputs
 
+The HTML report is the local observability panel. `codex report` shows one session's summary, root-cause narrative, token attribution, estimated cost drivers, recommendations, usage counters, token category breakdown, top files/artifacts, top commands, and repeated chunks. Top files are annotated when they look like lockfiles, generated files, schema artifacts, fixture data, snapshots, or minified assets. `codex overview` ranks recent sessions, groups their likely cost drivers, and includes cross-session recommendations; with `--session-reports`, each overview row links to a per-session diagnosis page.
+Overview pages and JSON show the top 20 sessions as rows while aggregating cost-driver totals across every analyzed session.
+
 This is local-only and does not upload conversation data.
 
-## Generic Trace Format
+## Claude Code Sessions
+
+List recent local Claude Code sessions:
+
+```bash
+tokencause claude scan
+tokencause claude scan --json
+```
+
+Explain the most recently updated Claude session:
+
+```bash
+tokencause claude explain --last
+tokencause claude explain --last --json
+```
+
+Explain a specific JSONL file:
+
+```bash
+tokencause claude explain --session-file ~/.claude/projects/.../session.jsonl
+```
+
+Generate a local HTML diagnosis panel:
+
+```bash
+tokencause claude report --last --out reports/claude-report.html
+open reports/claude-report.html
+```
+
+Generate a multi-session overview:
+
+```bash
+tokencause claude overview --limit 20 --session-reports --out reports/claude-overview.html
+open reports/claude-overview.html
+tokencause claude overview --limit 20 --json
+```
+
+Estimate Claude dollar cost with your own token prices:
+
+```bash
+cp examples/tokencause.prices.example.json tokencause.prices.json
+tokencause claude overview --limit 20 --price-config tokencause.prices.json
+```
+
+Analyze a Claude Code OpenTelemetry JSON/JSONL export:
+
+```bash
+tokencause claude import-otel examples/claude_otel_sample.json --budget 1
+```
+
+Use `--json` with TokenCause traces or Claude OpenTelemetry imports when you want structured output for another tool:
+
+```bash
+tokencause claude import-otel examples/claude_otel_sample.json --budget 1 --json
+```
+
+The Claude adapter reads local `~/.claude/projects/*/*.jsonl` files. It reports Claude-specific cost drivers including cache-heavy context, repeated parent context, large tool results, repeated files/artifacts, and expensive models used on likely low-value steps. Use `--markdown` when you want the Markdown report instead of the diagnosis-first console output. `claude report` shows the same diagnosis as a local HTML page with summary, cost drivers, recommendations, usage counters, tool/model breakdowns, top files/artifacts, and repeated files/artifacts. Top files are annotated when they look like lockfiles, generated files, schema artifacts, fixture data, snapshots, or minified assets. `claude overview` ranks recent sessions by token volume, groups their likely cost drivers, and includes cross-session recommendations. TokenCause does not hard-code Claude prices; pass `--price-config` or the Claude price flags when you want dollar estimates. `claude import-otel` supports OTLP-style JSON/JSONL exports with `claude_code.token.usage`, `claude_code.cost.usage`, and Claude log records such as tool results; it also accepts flat JSONL records from simpler collectors.
+Overview pages and JSON show the top 20 sessions as rows while aggregating cost-driver totals across every analyzed session.
+
+## TokenCause Trace Format
 
 Each line should be one JSON object:
 
 ```json
-{"run_id":"abc","step":"plan","model":"claude-sonnet-4","tool":"none","input_tokens":12000,"output_tokens":900,"cost_usd":0.42,"latency_ms":18000,"context_hash":"repo-v1","context_items":["README.md","src/auth.py"]}
+{"session_id":"abc","category":"tool_output","step":"test","model":"claude-sonnet-4","tool":"shell","command":"pytest tests/test_auth.py","tokens":2400,"input_tokens":1800,"output_tokens":600,"cost_usd":0.42,"latency_ms":18000,"content_hash":"failure-v1","file_refs":["tests/test_auth.py"],"preview":"pytest failed: timeout"}
 ```
 
 Supported fields:
 
-- `run_id`
+- `session_id`
+- `category`
+- `tokens`
+- `preview`
+- `command`
+- `file_refs`
+- `content_hash`
 - `step`
 - `model`
 - `tool`
@@ -155,58 +323,21 @@ Supported fields:
 - `latency_ms`
 - `status`
 - `error`
-- `context_hash`
-- `context_items`
-- `files`
 
-Common aliases are also supported, including `prompt_tokens`, `completion_tokens`, `duration_ms`, and `model_name`.
-
-## LiteLLM Logs
-
-Use:
-
-```bash
-tokencause analyze-litellm path/to/litellm.jsonl --budget 10
-```
-
-The LiteLLM adapter reads:
-
-- `model` / `model_name`
-- `response_cost` / `cost` / `spend`
-- `usage.prompt_tokens`
-- `usage.completion_tokens`
-- `duration_ms` / `latency_ms`
-- `metadata.run_id`
-- `metadata.step`
-- `metadata.tool`
-- `metadata.context_hash`
-- `metadata.context_items`
-- `status`
-- `error_message`
-
-If your LiteLLM logs do not include `metadata.step`, `metadata.context_hash`, or `metadata.context_items`, TokenCause can still analyze total spend. To diagnose token waste by agent workflow step, pass those values into LiteLLM metadata when making calls.
+Common aliases are also supported, including `run_id`, `context_hash`, `context_items`, `files`, `prompt_tokens`, `completion_tokens`, `inputTokens`, `outputTokens`, `duration_ms`, and `model_name`. Token fields may also be nested under `usage`.
 
 ## Roadmap
 
-See [docs/PLAN.md](docs/PLAN.md) for the current product plan and milestone breakdown.
+Near-term work:
 
-Planned analyzers:
-
-- `RepeatedContextAnalyzer`
-- `LongToolOutputAnalyzer`
-- `ExpensiveFileAnalyzer`
-- `RetryCostAnalyzer`
-- `ModelMismatchAnalyzer`
-- `SessionDriftAnalyzer`
-
-Future sources:
-
-- Claude Code local logs.
-- Claude Code OpenTelemetry export.
-- LangSmith export.
-- ccusage JSON output import.
+- deepen Codex and Claude Code session diagnosis
+- make the dashboard easier to scan across projects
+- improve source-level file carryover and drift evidence
+- add more AI coding session sources when they expose enough trace metadata
 
 ## Development
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for local setup and verification, and [CHANGELOG.md](CHANGELOG.md) for notable changes.
 
 Run tests:
 
@@ -214,11 +345,20 @@ Run tests:
 python3 -m unittest discover -s tests
 ```
 
-Generate example reports:
+Run example-only smoke commands:
 
 ```bash
-python3 tokencause.py analyze examples/sample_trace.jsonl --budget 2 --out reports/sample_report.md
-python3 tokencause.py analyze-litellm examples/litellm_sample.jsonl --budget 2 --out reports/litellm_report.md
+python3 tokencause.py analyze examples/tokencause_trace.jsonl --budget 2 --out reports/sample_report.md
+python3 tokencause.py claude import-otel examples/claude_otel_sample.json --budget 1
+```
+
+Generate local-session reports when you have Codex or Claude Code history on this machine:
+
+```bash
+python3 tokencause.py claude report --last --out reports/claude-report.html
+python3 tokencause.py claude overview --limit 20 --session-reports --price-config examples/claude_prices.example.json --out reports/claude-overview.html
+python3 tokencause.py codex report --last --out reports/codex-report.html
+python3 tokencause.py codex overview --limit 20 --session-reports --out reports/codex-overview.html
 ```
 
 ## License

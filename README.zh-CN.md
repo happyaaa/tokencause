@@ -1,33 +1,24 @@
 # TokenCause
 
+[![tests](https://github.com/happyaaa/tokencause/actions/workflows/test.yml/badge.svg)](https://github.com/happyaaa/tokencause/actions/workflows/test.yml)
+
 [English](README.md)
 
 诊断你的 AI 编程会话为什么烧 token。
 
-TokenCause 是一个本地优先的 token 成本 root-cause analysis CLI。它不是只告诉你“花了多少”，而是解释 Claude Code、Codex、LiteLLM 或其他 AI coding / agent session 里的 token 到底花在了哪里：重复上下文、超长命令输出、大文件、失败重试、贵模型误用。
+TokenCause 是一个本地优先的 token 成本 root-cause analysis CLI。它不是只告诉你“花了多少”，而是解释 Claude Code、Codex 或其他 AI coding / agent session 里的 token 到底花在了哪里：重复上下文、超长命令输出、大文件、失败重试、贵模型误用。
 
 大多数 usage 工具告诉你花了多少。TokenCause 告诉你为什么。
 
+![TokenCause demo dashboard](docs/assets/demo-dashboard.png)
+
 ## 为什么是 TokenCause
 
-[ccusage](https://github.com/ryoppippi/ccusage) 这类工具很适合做本地 coding agent CLI 的 usage accounting。它回答的是：
-
-- 今天用了多少 token？
-- 哪个 coding CLI 用得最多？
-- 哪些 session、日期、项目最贵？
-
-TokenCause 关注下一层：
+TokenCause 关注 usage accounting 工具通常回答不了的诊断层：
 
 - 为什么这次 session 这么贵？
 - 是哪些文件、命令、重试、重复上下文导致成本上升？
 - 下一次应该怎么改 workflow，避免同样的 token 浪费？
-
-简单说：
-
-```text
-ccusage    -> usage accounting
-TokenCause -> cost root-cause analysis
-```
 
 ## 它会检测什么
 
@@ -40,38 +31,95 @@ TokenCause -> cost root-cause analysis
 
 ## 快速开始
 
+最快 demo，不需要本机已有 Codex 或 Claude Code 历史：
+
 直接从源码运行：
 
 ```bash
 git clone https://github.com/happyaaa/tokencause.git
 cd tokencause
-python3 tokencause.py analyze examples/sample_trace.jsonl --budget 2
+python3 tokencause.py serve --demo
 ```
 
-或者安装本地 CLI：
+或者先安装本地 CLI：
 
 ```bash
-python3 -m pip install -e .
-tokencause analyze examples/sample_trace.jsonl --budget 2
+python3 -m venv .venv
+source .venv/bin/activate
+python -m pip install -e .
+tokencause serve --demo
 ```
 
-分析 LiteLLM JSONL 日志：
+然后再分析真实本地 sessions：
 
 ```bash
-tokencause analyze-litellm examples/litellm_sample.jsonl --budget 2 --out reports/litellm_report.md
+tokencause doctor
+tokencause serve
 ```
 
-直接输出 Markdown 报告：
+`serve` 会自动优先使用最近的本地 Codex sessions；如果没有 Codex session，就使用最近的 Claude Code sessions。它会把本地 dashboard site 写到 `reports/tokencause-site`，并默认在 `http://127.0.0.1:8787/` 启动。
+
+如果你只想生成静态文件或 JSON，不想启动 server：
 
 ```bash
-tokencause analyze examples/sample_trace.jsonl --budget 2 --markdown
+tokencause dashboard --session-reports
+tokencause dashboard --json
 ```
+
+`dashboard` 默认会写出本地 HTML dashboard：`reports/tokencause-dashboard.html`。
+
+dashboard 开头会先给诊断，而不只是表格：最可能的 top cost driver、为什么发生、背后的 workflow pattern、下一步动作，以及下次怎么避免同样的 token 浪费。
+
+单个 session report 会明确区分 token 口径：provider/model billed counters、observable transcript tokens、cache tokens，以及 TokenCause 的 estimated waste signal。estimated waste 是诊断信号，不是账单总额。
+
+检查 TokenCause 能看到哪些本地数据源：
+
+```bash
+tokencause doctor
+tokencause doctor --json
+```
+
+检查已安装 CLI 版本：
+
+```bash
+tokencause --version
+```
+
+如果你手上已经有单独的 JSONL trace，可以这样分析：
+
+```bash
+tokencause analyze examples/tokencause_trace.jsonl --budget 2
+```
+
+从通用 trace 直接输出 Markdown 报告：
+
+```bash
+tokencause analyze examples/tokencause_trace.jsonl --budget 2 --markdown
+```
+
+输出机器可读 JSON，方便接脚本、CI 或你自己的 dashboard：
+
+```bash
+tokencause dashboard --json
+tokencause analyze examples/tokencause_trace.jsonl --budget 2 --json
+```
+
+所有 JSON 输出的根对象都会包含 `schema_version` 和 `version`，方便下游工具把数据结构变更和 CLI 版本区分开。输出契约见 [docs/JSON_OUTPUT.md](docs/JSON_OUTPUT.md)。
+
+不想启动 server，只想生成 demo/static artifacts：
+
+```bash
+tokencause dashboard --demo
+tokencause demo-site
+```
+
+更多 demo 命令见 [docs/DEMO.md](docs/DEMO.md)。
 
 ## 示例输出
 
 ```text
 TokenCause
-input: examples/litellm_sample.jsonl
+input: examples/tokencause_trace.jsonl
 events: 5
 total cost: $2.5200
 total tokens: 67600
@@ -92,17 +140,30 @@ recommended actions:
 - 给失败重试加预算护栏
 ```
 
-当前报告是 diagnosis-first。dashboard 可以展示趋势，但最先有价值的问题通常是：为什么这次 session 变贵？
+当前报告是 diagnosis-first。dashboard 可以展示趋势，但最先有价值的问题通常是：为什么这次 session 变贵？TokenCause 会保留 observability 数据层，然后把最大的 cost driver 翻译成 workflow diagnosis。
 
 ## 当前输入
 
 TokenCause 当前支持：
 
 - Codex Desktop/CLI 本地会话。
+- Claude Code 本地 JSONL 会话。
+- Claude Code OpenTelemetry JSON/JSONL export。
 - 通用 JSONL trace。
-- LiteLLM proxy/log JSONL。
 
-`examples/` 里的文件是假数据，只用于快速试跑 CLI。真实使用时应该指向你自己的 LiteLLM 或 agent trace 日志。
+`examples/` 里的文件是假数据，只用于快速试跑 CLI。真实使用时应该指向你自己的 agent trace 日志。
+
+## 当前状态
+
+TokenCause 目前是 alpha，但已经可以用于本地诊断。现在最强的路径是 Codex local session analysis，其次是 Claude Code local sessions 和 Claude OpenTelemetry exports。Generic JSONL 是高级集成路径，但诊断深度取决于这些日志里是否包含 workflow metadata。
+
+当前边界见 [docs/LIMITATIONS.md](docs/LIMITATIONS.md)，尤其是 billed/model tokens、observable transcript tokens、cache tokens、estimated waste 之间的区别。
+
+## 隐私
+
+TokenCause 是 local-first 工具。它只读取你传入路径里的本地 session 文件、trace export、可选价格配置文件，或标准 Codex/Claude 本地目录。它不会把对话数据、源码、trace 或报告上传到任何托管服务。
+
+生成的报告和 `.tokencause-cache` 文件可能包含本地路径、命令输出片段和 session metadata。分享报告、缓存或用真实 trace 提 issue 前，请先看 [SECURITY.md](SECURITY.md)。
 
 ## Codex 会话
 
@@ -110,12 +171,14 @@ TokenCause 当前支持：
 
 ```bash
 tokencause codex scan
+tokencause codex scan --json
 ```
 
 解释最近更新的会话：
 
 ```bash
 tokencause codex explain --last
+tokencause codex explain --last --json
 ```
 
 解释指定 thread：
@@ -124,16 +187,115 @@ tokencause codex explain --last
 tokencause codex explain --thread-id 019eb90f
 ```
 
+用你自己填写的 token 单价估算美元成本：
+
+```bash
+tokencause codex explain --last \
+  --input-price-per-mtok 2.00 \
+  --cached-input-price-per-mtok 0.50 \
+  --output-price-per-mtok 8.00
+```
+
+也可以把价格放在本地 JSON 文件里：
+
+```bash
+cp examples/tokencause.prices.example.json tokencause.prices.json
+tokencause codex overview --limit 20 --price-config tokencause.prices.json
+```
+
+生成本地 HTML 诊断报告：
+
+```bash
+tokencause codex report --last --out reports/codex-report.html
+open reports/codex-report.html
+```
+
+生成最近多个 sessions 的本地 HTML 总览：
+
+```bash
+tokencause codex overview --limit 20 --session-reports --out reports/codex-overview.html
+open reports/codex-overview.html
+tokencause codex overview --limit 20 --json
+```
+
+`codex overview` 会把解析后的 session 缓存在 `.tokencause-cache/codex`，重复生成 overview 时不用每次重读所有 rollout 文件。每次运行后会打印 cache hit/miss 数量和解析耗时；需要强制重新解析时可以加 `--no-cache`。缓存文件只保存在本地并已被 gitignore，但仍可能包含敏感的本地诊断 metadata。
+
+TokenCause 不会硬编码 Codex 模型价格，因为价格会变，而且本地 Codex rollout 不一定包含模型名。需要估算成本时，用上面的 price flags 或 `--price-config` 自己传入单价。CLI price flags 会覆盖配置文件。
+
 Codex adapter 会读取 `~/.codex/state_5.sqlite` 找到 session metadata 和每个 session 的 rollout JSONL。它优先使用 Codex 自带的 token counters，然后做本地 transcript 分析：
 
 - observable transcript token breakdown
+- command output categories：test、build、install、search、other、error
 - top files/artifacts
+- repeated files/artifacts
 - top commands
 - repeated content chunks
 - long tool outputs
 - error-like outputs
 
+HTML report 是本地 observability panel。`codex report` 看单个 session 的 summary、root-cause narrative、token attribution、估算 cost drivers、recommendations、usage counters、token category breakdown、top files/artifacts、top commands、repeated chunks。Top files 如果像 lockfile、generated file、schema artifact、fixture data、snapshot 或 minified asset，会直接标注风险原因。`codex overview` 会把最近多个 sessions 排序，聚合它们的主要 cost drivers，并给出跨 session recommendations；加上 `--session-reports` 后，每一行都能点进对应 session 的诊断页。
+Overview 页面和 JSON 只展示 token 最高的前 20 个 sessions，但 cost-driver 聚合会覆盖所有已分析 sessions。
+
 整个过程只在本地运行，不上传对话数据。
+
+## Claude Code 会话
+
+列出最近的本地 Claude Code 会话：
+
+```bash
+tokencause claude scan
+tokencause claude scan --json
+```
+
+解释最近更新的 Claude 会话：
+
+```bash
+tokencause claude explain --last
+tokencause claude explain --last --json
+```
+
+解释指定 JSONL 文件：
+
+```bash
+tokencause claude explain --session-file ~/.claude/projects/.../session.jsonl
+```
+
+生成本地 HTML 诊断面板：
+
+```bash
+tokencause claude report --last --out reports/claude-report.html
+open reports/claude-report.html
+```
+
+生成多会话 overview：
+
+```bash
+tokencause claude overview --limit 20 --session-reports --out reports/claude-overview.html
+open reports/claude-overview.html
+tokencause claude overview --limit 20 --json
+```
+
+用你自己填写的 Claude token 单价估算美元成本：
+
+```bash
+cp examples/tokencause.prices.example.json tokencause.prices.json
+tokencause claude overview --limit 20 --price-config tokencause.prices.json
+```
+
+分析 Claude Code OpenTelemetry JSON/JSONL export：
+
+```bash
+tokencause claude import-otel examples/claude_otel_sample.json --budget 1
+```
+
+如果要把通用 trace 或 Claude OpenTelemetry import 接到其他工具里，可以加 `--json` 输出结构化结果：
+
+```bash
+tokencause claude import-otel examples/claude_otel_sample.json --budget 1 --json
+```
+
+Claude adapter 会读取本地 `~/.claude/projects/*/*.jsonl` 文件。它会输出 Claude-specific cost drivers，包括 cache-heavy context、repeated parent context、大 tool results、repeated files/artifacts、以及贵模型用在疑似低价值步骤。需要通用 Markdown 报告时可以加 `--markdown`。`claude report` 会把同样的诊断做成本地 HTML 页面，包括 summary、cost drivers、recommendations、usage counters、tool/model breakdowns、top files/artifacts、repeated files/artifacts。Top files 如果像 lockfile、generated file、schema artifact、fixture data、snapshot 或 minified asset，会直接标注风险原因。`claude overview` 会按 token 量排序最近 sessions，聚合它们的主要 cost drivers，并给出跨 session recommendations。TokenCause 不会硬编码 Claude 价格；需要美元估算时，传 `--price-config` 或 Claude price flags。`claude import-otel` 支持 OTLP-style JSON/JSONL export，读取 `claude_code.token.usage`、`claude_code.cost.usage`，以及 tool result 这类 Claude log records；也支持更简单 collector 生成的 flat JSONL records。
+Overview 页面和 JSON 只展示 token 最高的前 20 个 sessions，但 cost-driver 聚合会覆盖所有已分析 sessions。
 
 ## 通用 Trace 格式
 
@@ -159,54 +321,20 @@ Codex adapter 会读取 `~/.codex/state_5.sqlite` 找到 session metadata 和每
 - `context_items`
 - `files`
 
-也兼容一些常见别名，例如 `prompt_tokens`、`completion_tokens`、`duration_ms`、`model_name`。
-
-## LiteLLM 日志
-
-使用：
-
-```bash
-tokencause analyze-litellm path/to/litellm.jsonl --budget 10
-```
-
-LiteLLM adapter 会读取：
-
-- `model` / `model_name`
-- `response_cost` / `cost` / `spend`
-- `usage.prompt_tokens`
-- `usage.completion_tokens`
-- `duration_ms` / `latency_ms`
-- `metadata.run_id`
-- `metadata.step`
-- `metadata.tool`
-- `metadata.context_hash`
-- `metadata.context_items`
-- `status`
-- `error_message`
-
-如果你的 LiteLLM 日志里还没有 `metadata.step`、`metadata.context_hash` 或 `metadata.context_items`，TokenCause 仍然可以分析总花费。但如果要定位“哪个 agent 步骤浪费 token”，建议在调用 LiteLLM 时把这些字段写进 metadata。
+也兼容一些常见别名，例如 `prompt_tokens`、`completion_tokens`、`inputTokens`、`outputTokens`、`duration_ms`、`model_name`。Token 字段也可以嵌在 `usage` 里。
 
 ## Roadmap
 
-当前产品计划和 milestone 拆解见 [docs/PLAN.md](docs/PLAN.md)。
+近期重点：
 
-计划中的 analyzers：
-
-- `RepeatedContextAnalyzer`
-- `LongToolOutputAnalyzer`
-- `ExpensiveFileAnalyzer`
-- `RetryCostAnalyzer`
-- `ModelMismatchAnalyzer`
-- `SessionDriftAnalyzer`
-
-后续数据源：
-
-- Claude Code local logs。
-- Claude Code OpenTelemetry export。
-- LangSmith export。
-- ccusage JSON output import。
+- 继续加深 Codex 和 Claude Code session diagnosis
+- 让 dashboard 更容易按项目扫描
+- 改进文件 carryover 和 session drift 的证据表达
+- 只在数据源能提供足够 trace metadata 时，再接入更多 AI coding session 来源
 
 ## 开发
+
+本地 setup 和验证命令见 [CONTRIBUTING.md](CONTRIBUTING.md)，主要变化见 [CHANGELOG.md](CHANGELOG.md)。
 
 运行测试：
 
@@ -214,11 +342,20 @@ LiteLLM adapter 会读取：
 python3 -m unittest discover -s tests
 ```
 
-生成示例报告：
+运行只依赖 `examples/` 的 smoke commands：
 
 ```bash
-python3 tokencause.py analyze examples/sample_trace.jsonl --budget 2 --out reports/sample_report.md
-python3 tokencause.py analyze-litellm examples/litellm_sample.jsonl --budget 2 --out reports/litellm_report.md
+python3 tokencause.py analyze examples/tokencause_trace.jsonl --budget 2 --out reports/sample_report.md
+python3 tokencause.py claude import-otel examples/claude_otel_sample.json --budget 1
+```
+
+如果这台机器上有 Codex 或 Claude Code 历史，再生成本地 session 报告：
+
+```bash
+python3 tokencause.py claude report --last --out reports/claude-report.html
+python3 tokencause.py claude overview --limit 20 --session-reports --price-config examples/claude_prices.example.json --out reports/claude-overview.html
+python3 tokencause.py codex report --last --out reports/codex-report.html
+python3 tokencause.py codex overview --limit 20 --session-reports --out reports/codex-overview.html
 ```
 
 ## License
