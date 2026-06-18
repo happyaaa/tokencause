@@ -1,4 +1,15 @@
 __pycache__/
 *.pyc
+.DS_Store
+*.egg-info/
+build/
+dist/
 .venv/
 .venv-test/
+.tokencause-cache/
+reports/
+reports/*.md
+reports/*.json
+reports/*.html
+reports/codex-sessions/
+reports/claude-sessions/

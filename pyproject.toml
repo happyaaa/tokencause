@@ -8,7 +8,7 @@ license = "MIT"
 authors = [
   { name = "TokenCause contributors" }
 ]
-keywords = ["llm", "agents", "observability", "litellm", "cost", "tokens"]
+keywords = ["llm", "agents", "observability", "cost", "tokens"]
 classifiers = [
   "Development Status :: 3 - Alpha",
   "Environment :: Console",
@@ -19,11 +19,16 @@ classifiers = [
 ]
 dependencies = []
 
+[project.urls]
+Homepage = "https://github.com/happyaaa/tokencause"
+Repository = "https://github.com/happyaaa/tokencause"
+Issues = "https://github.com/happyaaa/tokencause/issues"
+
 [project.scripts]
 tokencause = "tokencause:main"
 
-[tool.setuptools]
-py-modules = ["tokencause"]
+[tool.setuptools.packages.find]
+include = ["tokencause*"]
 
 [build-system]
 requires = ["setuptools>=68"]
