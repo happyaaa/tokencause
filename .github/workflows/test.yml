@@ -1,0 +1,31 @@
+name: tests
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  unit:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: python -m pip install --upgrade pip
+      - run: python -m pip install build
+      - run: python -m build
+      - run: python -m pip install dist/*.whl
+      - run: tokencause --version
+      - run: tokencause serve --help
+      - run: tokencause serve --demo --help
+      - run: tokencause dashboard --demo --out /tmp/tokencause-dashboard-demo.html
+      - run: tokencause demo-site --out /tmp/tokencause-demo-site
+      - run: tokencause doctor --json | python -m json.tool
+      - run: tokencause analyze examples/sample_trace.jsonl --budget 2
+      - run: tokencause analyze examples/sample_trace.jsonl --budget 2 --json | python -m json.tool
+      - run: tokencause analyze-litellm examples/litellm_sample.jsonl --budget 2 --json | python -m json.tool
+      - run: tokencause import --from-ccusage examples/ccusage_sample.json --budget 2 --json | python -m json.tool
+      - run: tokencause claude import-otel examples/claude_otel_sample.json --budget 2 --json | python -m json.tool
+      - run: python -m unittest discover -s tests

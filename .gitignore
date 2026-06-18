@@ -13,3 +13,5 @@ reports/*.json
 reports/*.html
 reports/codex-sessions/
 reports/claude-sessions/
+.playwright-cli/
+output/
