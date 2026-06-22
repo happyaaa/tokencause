@@ -2,11 +2,12 @@
 
 from pathlib import Path
 
+from tokencause.core.casefile import build_session_case_file
 from tokencause.core.formatting import money, seconds, top_items
-from tokencause.core.models import Analysis
+from tokencause.core.models import Analysis, SessionTrace
 
 
-def render_markdown(analysis: Analysis, source_path: Path, budget_usd: float | None) -> str:
+def render_markdown(analysis: Analysis, source_path: Path, budget_usd: float | None, trace: SessionTrace | None = None) -> str:
     projected_cost = max(analysis.total_cost - analysis.estimated_savings_usd, 0.0)
     lines = [
         "# TokenCause Report",
@@ -37,6 +38,27 @@ def render_markdown(analysis: Analysis, source_path: Path, budget_usd: float | N
     else:
         lines.append("- 暂无明确降本动作。")
     lines.append("")
+
+    if trace is not None:
+        case_file = build_session_case_file(trace)
+        lines.extend(["## Engineering Process", ""])
+        lines.append(f"- **Shape:** {case_file.process_summary.shape}")
+        lines.append(f"- **Narrative:** {case_file.process_summary.narrative}")
+        for phase in case_file.process_summary.phases:
+            if phase.tokens <= 0 and phase.events <= 0:
+                continue
+            lines.append(f"- **{phase.name.replace('_', ' ').title()}:** {phase.tokens} tokens ({phase.share:.0%}), {phase.events} event(s)")
+        lines.append("")
+
+        lines.extend(["## Risk Signals", ""])
+        if case_file.risk_signals:
+            for risk in case_file.risk_signals:
+                lines.append(f"- **{risk.name} ({risk.severity})**：{risk.why}")
+                for item in risk.evidence[:2]:
+                    lines.append(f"  - {item}")
+        else:
+            lines.append("- No high-signal risk detected.")
+        lines.append("")
 
     lines.extend(["## 成本按模型", ""])
     for model, cost in top_items(analysis.cost_by_model):

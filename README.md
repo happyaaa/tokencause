@@ -4,11 +4,11 @@
 
 [中文文档](README.zh-CN.md)
 
-Find why your AI coding session got expensive.
+Diagnose whether an AI coding session was worth its tokens, and what to change next time.
 
-TokenCause is a local-first CLI for token cost root-cause analysis. It helps explain where tokens went in Claude Code, Codex, and other AI coding or agent sessions: repeated context, long command output, expensive files, retry loops, and model mismatch.
+TokenCause is a local-first diagnosis CLI for AI coding sessions. It explains not just where tokens went in Claude Code, Codex, and other coding-agent runs, but why the session became expensive, slow, risky, or hard to reason about: repeated context, long command output, expensive files, retry loops, broad exploration, session drift, and model mismatch.
 
-Most usage tools tell you how much you spent. TokenCause tells you why.
+Most usage tools tell you how much you spent. TokenCause tells you whether the session was worth its tokens, what made it expensive, and which workflow lesson to reuse next time.
 
 ![TokenCause demo dashboard](docs/assets/demo-dashboard.png)
 
@@ -18,7 +18,8 @@ TokenCause focuses on the diagnostic layer that usage accounting tools usually d
 
 - Why did this session get expensive?
 - Which files, commands, retries, or repeated contexts drove the cost?
-- What would I change in the workflow to avoid the same cost pattern next time?
+- Which tokens were necessary exploration, and which came from avoidable workflow shape?
+- What lesson should this repo or workflow remember for the next AI coding session?
 
 ## What It Detects
 
@@ -28,6 +29,8 @@ TokenCause focuses on the diagnostic layer that usage accounting tools usually d
 - **Retry/failure cost**: failed patches, repeated tests, repeated commands, or retry loops.
 - **Model mismatch**: expensive models used for search, read, route, summarize, or formatting-only work.
 - **Session drift**: long sessions where later turns spend more tokens while making less progress.
+- **Engineering process shape**: discovery-heavy, debug-heavy, implementation-without-verification, or review-light sessions.
+- **Review risk signals**: weak verification, sensitive areas, large review surface, context pollution, retry loops, or generated artifacts.
 
 ## Quick Start
 
@@ -68,7 +71,7 @@ tokencause dashboard --json
 
 `dashboard` writes a local HTML dashboard to `reports/tokencause-dashboard.html` by default.
 
-The dashboard starts with a diagnosis, not just a table: the likely top cost driver, why it happened, the workflow pattern behind it, the next action, and how to avoid the same token waste next time.
+The dashboard starts with a diagnosis, not just a table: the likely top cost driver, why it happened, the workflow pattern behind it, process shape, risk signals, the next action, and the reusable workflow lesson to carry into the next session.
 
 Session reports separate token scopes: provider/model billed counters, observable transcript tokens, cache tokens, and TokenCause's estimated waste signal. Estimated waste is diagnostic, not a billing total.
 
@@ -140,7 +143,7 @@ recommended actions:
 - Add budget guards to retries
 ```
 
-The current reports are intentionally diagnosis-first. A dashboard can show trends, but the first useful question is usually: why did this session get expensive? TokenCause keeps the observability layer visible, then turns the largest cost driver into a workflow diagnosis.
+The current reports are intentionally diagnosis-first. A dashboard can show trends, but the first useful question is usually: why did this session get expensive, was the exploration worth it, and what should change next time? TokenCause keeps the observability layer visible, then turns the largest cost driver into a workflow diagnosis and reusable lesson.
 
 ## Current Inputs
 
@@ -331,6 +334,7 @@ Common aliases are also supported, including `run_id`, `context_hash`, `context_
 Near-term work:
 
 - deepen Codex and Claude Code session diagnosis
+- promote repeated diagnosis into reusable workflow lessons
 - make the dashboard easier to scan across projects
 - improve source-level file carryover and drift evidence
 - add more AI coding session sources when they expose enough trace metadata

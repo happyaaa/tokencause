@@ -68,7 +68,7 @@ tokencause dashboard --demo --json
 Shape:
 
 - `source`: selected local adapter, `codex` or `claude`.
-- `summary`: adapter-neutral dashboard diagnosis with `sessions_analyzed`, `top_session`, `top_driver`, `why`, `workflow_pattern`, `next_action`, `avoid_next_time`, and `recommendations`.
+- `summary`: adapter-neutral dashboard diagnosis with `sessions_analyzed`, `top_session`, `top_driver`, `why`, `workflow_pattern`, `next_action`, `avoid_next_time`, reusable `workflow_lessons`, `process_shape`, `risk_signals`, `attribution_quality`, `value_evidence`, and `recommendations`.
 - `overview`: the selected adapter's overview payload.
 
 The dashboard command auto-selects Codex when local Codex sessions are visible, otherwise Claude Code. Use `--source codex` or `--source claude` to force an adapter.
@@ -134,6 +134,7 @@ Shape:
 - `canonical_trace`: adapter output normalized to TokenCause `SessionTrace` counters.
 - `root_cause_narrative`: Codex session root-cause narrative items with `driver`, `impact_tokens`, `impact_share`, `cause`, `evidence`, and `next_action`.
 - `token_attribution`: Codex token scope split: `model_billed_tokens`, `model_input_tokens`, `model_output_tokens`, `cache_tokens`, `observable_transcript_tokens`, `estimated_waste_tokens`, `estimated_waste_share_of_observable`, and `scope_notes`.
+- `case_file`: structured diagnosis record with observed facts, evidence, likely causes, file carryover, drift timeline, `process_summary`, `risk_signals`, `attribution_quality`, `value_evidence`, `next_run_plan`, recommendations, reusable `workflow_lessons`, and limits.
 - `recommendations`: concrete next actions.
 - `observability`: raw breakdowns used to explain the diagnosis.
 

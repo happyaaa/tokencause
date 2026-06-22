@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any
 
 from tokencause.constants import __version__, JSON_OUTPUT_SCHEMA_VERSION, JSON_TEXT_PREVIEW_LIMIT
+from tokencause.core.casefile import build_session_case_file, session_case_file_to_json
 from tokencause.core.diagnosis import build_session_trace_cost_drivers
 from tokencause.core.models import Analysis, CostDriver, HumanDiagnosis, SessionTrace, TraceEvent
 from tokencause.core.tokens import short_preview
@@ -165,8 +166,10 @@ def aggregate_session_trace_driver_tokens(traces: list[SessionTrace]) -> Counter
 
 def session_trace_to_json_dict(trace: SessionTrace, analysis: Analysis, source_path: Path, budget_usd: float | None) -> dict[str, Any]:
     payload = analysis_to_json_dict(analysis, source_path, budget_usd, adapter=trace.source)
+    drivers = build_session_trace_cost_drivers(trace)
     payload["session"] = session_trace_summary_to_json(trace)
-    payload["cost_drivers"] = session_trace_drivers_to_json(trace)
+    payload["cost_drivers"] = [cost_driver_to_json(driver, trace.observable_tokens) for driver in drivers]
+    payload["case_file"] = session_case_file_to_json(build_session_case_file(trace, drivers))
     payload["diagnosis_scope"] = {
         "observable_tokens": "Estimated from visible session events such as messages, file reads, and tool output.",
         "model_total_tokens": "Provider/model counters when present in the trace, otherwise derived from event token fields.",

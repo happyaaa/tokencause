@@ -202,8 +202,13 @@ def build_broad_exploration(
 
     has_broad_search = len(broad_events) >= 1 and search_tokens >= 400
     many_searches = search_commands >= 4 and search_tokens >= 800
-    many_files = unique_files >= 12 and search_tokens >= 800
-    search_dominated = command_total > 0 and search_tokens / command_total >= 0.35 and search_tokens >= 800
+    many_files = unique_files >= 12 and search_tokens >= 800 and search_commands > 0
+    search_dominated = (
+        search_commands > 0
+        and command_total > 0
+        and search_tokens / command_total >= 0.35
+        and search_tokens >= 800
+    )
     if not (has_broad_search or many_searches or many_files or search_dominated):
         return None
 

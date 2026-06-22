@@ -27,6 +27,21 @@ FILE_RISK_REASONS = (
     (".min.", "minified asset"),
 )
 
+AGENT_INTERNAL_PATH_HINTS = (
+    "/.codex/",
+    "/.claude/",
+    "/.agents/",
+    "/.cursor/",
+    "/.continue/",
+    ".codex/plugins/",
+    ".codex/skills/",
+    ".claude/plugins/",
+    ".claude/projects/",
+    "claude-plugins-official/",
+    "openai-curated/",
+    "superpowers/",
+)
+
 
 def extract_file_refs(text: str) -> tuple[str, ...]:
     refs = {normalize_file_ref(match) for match in FILE_REF_RE.findall(text or "")}
@@ -42,6 +57,28 @@ def file_risk_reason(file_ref: str) -> str:
     if lower.endswith((".jsonl", ".json")):
         return "large structured data"
     return ""
+
+
+def is_agent_internal_ref(file_ref: str, cwd: str = "") -> bool:
+    normalized = file_ref.replace("\\", "/")
+    lower = normalized.lower()
+    if re.match(r"^r\d+/", normalized):
+        return True
+    if cwd:
+        project_root = cwd.rstrip("/").replace("\\", "/")
+        if normalized.startswith(project_root + "/"):
+            return False
+    return any(hint.lower() in lower for hint in AGENT_INTERNAL_PATH_HINTS)
+
+
+def is_project_ref(file_ref: str, cwd: str = "") -> bool:
+    if not file_ref or is_agent_internal_ref(file_ref, cwd):
+        return False
+    if cwd:
+        project_root = cwd.rstrip("/").replace("\\", "/")
+        normalized = file_ref.replace("\\", "/")
+        return normalized.startswith(project_root + "/") or not normalized.startswith("/")
+    return not file_ref.startswith(("/", "~/."))
 
 
 def artifact_kind(file_ref: str) -> str:

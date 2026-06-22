@@ -210,7 +210,7 @@ def build_codex_token_attribution(report: CodexExplainReport, drivers: list[Cost
         "scope_notes": {
             "model_billed_tokens": "Provider/model token counters when present in the local session.",
             "observable_transcript_tokens": "Tokens estimated from visible prompts, tool calls, and tool outputs in the transcript.",
-            "estimated_waste_tokens": "Capped sum of overlapping TokenCause cost-driver impacts; diagnostic coverage signal, not waste or a billing total.",
+            "estimated_waste_tokens": "Capped sum of overlapping TokenCause cost-driver impacts; driver match coverage signal, not waste or a billing total.",
             "cache_tokens": "Cached input tokens reported by the model counter when present.",
         },
     }
@@ -297,8 +297,8 @@ def render_codex_explain(report: CodexExplainReport, prices: CodexPriceConfig | 
             f"- model billed tokens: {attribution['model_billed_tokens']}",
             f"- observable transcript tokens: {attribution['observable_transcript_tokens']}",
             f"- cache tokens: {attribution['cache_tokens']}",
-            f"- diagnostic coverage tokens: {attribution['estimated_waste_tokens']} ({attribution['estimated_waste_share_of_observable']:.0%} of observable)",
-            "- note: diagnostic coverage means observable tokens matched one or more drivers; it is not waste or a billing total.",
+            f"- driver match tokens: {attribution['estimated_waste_tokens']}",
+            "- note: driver match coverage means observable tokens matched one or more diagnostic categories; it is not waste or a billing total.",
         ]
     )
 

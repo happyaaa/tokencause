@@ -521,7 +521,7 @@ def command_analyze(args: argparse.Namespace) -> int:
     report = (
         render_session_trace_json(trace, analysis, trace_path, args.budget)
         if args.json
-        else render_markdown(analysis, trace_path, args.budget)
+        else render_markdown(analysis, trace_path, args.budget, trace=trace)
     )
 
     if args.out:

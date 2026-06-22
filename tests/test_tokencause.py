@@ -597,7 +597,7 @@ class TokenCauseTests(unittest.TestCase):
         self.assertIn("Cache-heavy context", output)
         self.assertIn("TokenCause Diagnosis", html)
         self.assertIn("Actionable Drivers", html)
-        self.assertIn("Cause Sentence", html)
+        self.assertIn("Diagnostic Trace", html)
         self.assertIn("Project Source Carryover", html)
         self.assertIn("All File / Artifact Carryover", html)
         self.assertIn("Drift Timeline", html)
@@ -618,6 +618,12 @@ class TokenCauseTests(unittest.TestCase):
         self.assertIn("cause_sentence", payload["case_file"])
         self.assertIn("file_carryovers", payload["case_file"])
         self.assertIn("drift_timeline", payload["case_file"])
+        self.assertIn("workflow_lessons", payload["case_file"])
+        self.assertIn("process_summary", payload["case_file"])
+        self.assertIn("risk_signals", payload["case_file"])
+        self.assertIn("attribution_quality", payload["case_file"])
+        self.assertIn("value_evidence", payload["case_file"])
+        self.assertIn("next_run_plan", payload["case_file"])
         self.assertIn("Long tool output", [driver["name"] for driver in payload["cost_drivers"]])
         self.assertEqual(payload["canonical_trace"]["source"], "claude")
         self.assertNotIn("session_cost_drivers", payload)
@@ -1062,6 +1068,12 @@ class TokenCauseTests(unittest.TestCase):
         self.assertTrue(payload["case_file"]["token_attribution"])
         self.assertTrue(payload["case_file"]["evidence"])
         self.assertTrue(payload["case_file"]["likely_causes"])
+        self.assertTrue(payload["case_file"]["workflow_lessons"])
+        self.assertTrue(payload["case_file"]["process_summary"]["shape"])
+        self.assertIn("risk_signals", payload["case_file"])
+        self.assertIn(payload["case_file"]["attribution_quality"]["level"], {"low", "medium", "high"})
+        self.assertIn(payload["case_file"]["value_evidence"]["level"], {"weak", "mixed", "strong"})
+        self.assertTrue(payload["case_file"]["next_run_plan"])
         self.assertIn("heuristic", " ".join(payload["case_file"]["limits"]).lower())
         metrics = payload["human_diagnosis"]["evidence_metrics"]
         self.assertEqual(metrics["largest_output_tokens"], report.long_tool_outputs[0].tokens)
@@ -1074,6 +1086,8 @@ class TokenCauseTests(unittest.TestCase):
         self.assertEqual(markdown_cli.returncode, 0, markdown_cli.stdout + markdown_cli.stderr)
         self.assertIn("# TokenCause Diagnosis", markdown_cli.stdout)
         self.assertIn("## Likely Cause", markdown_cli.stdout)
+        self.assertIn("## Engineering Process", markdown_cli.stdout)
+        self.assertIn("## Risk Signals", markdown_cli.stdout)
         self.assertIn("Largest tool output", markdown_cli.stdout)
 
     def test_session_case_file_separates_facts_evidence_and_inference(self):
@@ -1107,7 +1121,139 @@ class TokenCauseTests(unittest.TestCase):
         self.assertIn("file_carryovers", payload)
         self.assertIn("drift_timeline", payload)
         self.assertTrue(payload["recommendations"])
+        self.assertTrue(payload["workflow_lessons"])
+        self.assertIn("lesson", payload["workflow_lessons"][0])
+        self.assertIn("process_summary", payload)
+        self.assertIn("risk_signals", payload)
+        self.assertIn("attribution_quality", payload)
+        self.assertIn("value_evidence", payload)
+        self.assertTrue(payload["next_run_plan"])
         self.assertTrue(payload["limits"])
+
+    def test_process_summary_detects_discovery_heavy_weak_verification(self):
+        trace = tokencause.SessionTrace(
+            id="process-discovery",
+            source="test",
+            events=[
+                tokencause.SessionEvent(
+                    category="search_output",
+                    command="rg -n auth src",
+                    preview="src/auth/session.py",
+                    file_refs=("src/auth/session.py", "src/auth/token.py"),
+                    tokens=900,
+                    index=1,
+                ),
+                tokencause.SessionEvent(
+                    category="search_output",
+                    command="find src -type f",
+                    preview="many files",
+                    file_refs=tuple(f"src/module_{index}.py" for index in range(60)),
+                    tokens=700,
+                    index=2,
+                ),
+            ],
+            broad_exploration=tokencause.BroadExploration(
+                search_commands=2,
+                broad_commands=1,
+                unique_files=60,
+                search_tokens=1600,
+                command_tokens=1600,
+                examples=("find src -type f",),
+            ),
+        )
+        case_file = tokencause.build_session_case_file(trace)
+        payload = tokencause.session_case_file_to_json(case_file)
+
+        self.assertEqual(payload["process_summary"]["shape"], "Discovery-heavy, weak verification")
+        self.assertIn("Large review surface", [risk["name"] for risk in payload["risk_signals"]])
+        self.assertIn("Sensitive area touched", [risk["name"] for risk in payload["risk_signals"]])
+
+    def test_process_summary_detects_implementation_with_verification(self):
+        trace = tokencause.SessionTrace(
+            id="process-verified",
+            source="test",
+            events=[
+                tokencause.SessionEvent(
+                    category="tool_output",
+                    command="apply_patch",
+                    preview="updated src/app.py",
+                    file_refs=("src/app.py",),
+                    tokens=600,
+                    index=1,
+                ),
+                tokencause.SessionEvent(
+                    category="test_log",
+                    command="pytest tests/test_app.py",
+                    preview="1 passed",
+                    tokens=500,
+                    index=2,
+                ),
+            ],
+        )
+        case_file = tokencause.build_session_case_file(trace)
+        payload = tokencause.session_case_file_to_json(case_file)
+
+        self.assertEqual(payload["process_summary"]["shape"], "Implementation with verification")
+        self.assertNotIn("Weak verification", [risk["name"] for risk in payload["risk_signals"]])
+
+    def test_case_file_marks_low_attribution_quality(self):
+        trace = tokencause.SessionTrace(
+            id="low-quality",
+            source="test",
+            events=[
+                tokencause.SessionEvent(category="assistant_message", tokens=9000, preview="large assistant context", index=1),
+                tokencause.SessionEvent(category="other", tokens=1000, preview="unclassified payload", index=2),
+                tokencause.SessionEvent(category="error_log", tokens=200, preview="FAILED retry", index=3, status="failed"),
+            ],
+        )
+        payload = tokencause.session_case_file_to_json(tokencause.build_session_case_file(trace))
+
+        self.assertEqual(payload["attribution_quality"]["level"], "low")
+        self.assertEqual(payload["likely_causes"][0]["name"], "Diagnosis limited - low attribution quality")
+        self.assertEqual(payload["likely_causes"][0]["confidence"], "low")
+        self.assertIn("Secondary signals", payload["likely_causes"][0]["why"])
+
+    def test_risk_signals_detect_debug_loop_sensitive_and_review_light(self):
+        trace = tokencause.SessionTrace(
+            id="risk-debug",
+            source="test",
+            events=[
+                tokencause.SessionEvent(
+                    category="tool_output",
+                    command="apply_patch",
+                    preview="updated auth/payment.py",
+                    file_refs=("src/auth/payment.py",),
+                    tokens=500,
+                    index=1,
+                ),
+                tokencause.SessionEvent(
+                    category="error_log",
+                    command="pytest tests/test_payment.py",
+                    preview="FAILED payment auth traceback",
+                    file_refs=("src/auth/payment.py",),
+                    tokens=900,
+                    index=2,
+                    status="failed",
+                ),
+            ],
+            retry_loops=[
+                tokencause.RetryLoop(
+                    key="pytest tests/test_payment.py",
+                    count=3,
+                    tokens=900,
+                    command="pytest tests/test_payment.py",
+                    preview="FAILED payment auth traceback",
+                )
+            ],
+        )
+        case_file = tokencause.build_session_case_file(trace)
+        payload = tokencause.session_case_file_to_json(case_file)
+        risks = {risk["name"]: risk for risk in payload["risk_signals"]}
+
+        self.assertEqual(payload["process_summary"]["shape"], "Debug loop with high log carryover")
+        self.assertEqual(risks["Sensitive area touched"]["severity"], "high")
+        self.assertIn("Retry loop before final answer", risks)
+        self.assertIn("Review-light session", risks)
 
     def test_file_ref_extraction_ignores_urls_and_library_names(self):
         text = (
@@ -1397,9 +1543,9 @@ class TokenCauseTests(unittest.TestCase):
         payload = json.loads(render_codex_explain_json(report))
 
         self.assertIn("Token Attribution:", console)
-        self.assertIn("diagnostic coverage tokens", console)
+        self.assertIn("driver match tokens", console)
         self.assertIn("Token Attribution", html)
-        self.assertIn("diagnostic coverage", html)
+        self.assertIn("driver match coverage", html)
         attribution = payload["token_attribution"]
         self.assertEqual(attribution["model_billed_tokens"], 2300)
         self.assertEqual(attribution["cache_tokens"], 800)
@@ -1458,7 +1604,8 @@ class TokenCauseTests(unittest.TestCase):
         html = render_codex_html_report(report, prices=prices)
 
         self.assertIn("TokenCause Diagnosis", html)
-        self.assertIn("Likely cause", html)
+        self.assertIn("Diagnosis limited - low attribution quality", html)
+        self.assertIn("Attribution Quality & Value", html)
         self.assertIn("Observed Facts", html)
         self.assertIn("Appendix: Observable Token Sources", html)
         self.assertIn("Debug / verification", html)
@@ -1719,7 +1866,7 @@ class TokenCauseTests(unittest.TestCase):
             self.assertIn("Largest tool output", html)
             self.assertIn("Sessions Needing Attention", html)
             self.assertIn("Actionable tokens", html)
-            self.assertIn("Avoid next time", html)
+            self.assertIn("Remember next time", html)
             self.assertEqual(json_cli.returncode, 0, json_cli.stdout + json_cli.stderr)
             payload = json.loads(json_cli.stdout)
             self.assertEqual(json_out_cli.returncode, 0, json_out_cli.stdout + json_out_cli.stderr)
@@ -1734,7 +1881,12 @@ class TokenCauseTests(unittest.TestCase):
         self.assertEqual(payload["summary"]["confidence"], "medium")
         self.assertTrue(payload["summary"]["case_evidence"])
         self.assertIn("tool output", payload["summary"]["why"])
-        self.assertIn("first failure summary", payload["summary"]["next_action"])
+        self.assertIn("checkpoint summary", payload["summary"]["next_action"])
+        self.assertTrue(payload["summary"]["workflow_lessons"])
+        self.assertTrue(payload["summary"]["process_shape"])
+        self.assertIn("risk_signals", payload["summary"])
+        self.assertIn("attribution_quality", payload["summary"])
+        self.assertIn("value_evidence", payload["summary"])
         self.assertTrue(payload["summary"]["recommendations"])
         self.assertEqual(payload["overview"]["kind"], "codex_overview")
         self.assertEqual(payload["overview"]["summary"]["sessions_analyzed"], 1)

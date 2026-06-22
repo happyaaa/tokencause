@@ -136,6 +136,15 @@ def render_dashboard_summary_html(source_label: str, diagnosis: dict[str, Any], 
     report_link = top_session.get("report_link") if top_session else None
     avoid_next_time = diagnosis.get("avoid_next_time") if isinstance(diagnosis.get("avoid_next_time"), list) else []
     avoid_items = "".join(f"<li>{html.escape(str(item))}</li>" for item in avoid_next_time[:3])
+    workflow_lessons = diagnosis.get("workflow_lessons") if isinstance(diagnosis.get("workflow_lessons"), list) else []
+    lesson_items = "".join(
+        "<li>"
+        f"<strong>{html.escape(str(item.get('title', 'Workflow lesson')))}:</strong> "
+        f"{html.escape(str(item.get('lesson', '')))}"
+        "</li>"
+        for item in workflow_lessons[:2]
+        if isinstance(item, dict)
+    )
     billing_note = str(diagnosis.get("billing_note") or "")
     billing_note_html = f'<p class="muted">{html.escape(billing_note)}</p>' if billing_note else ""
     billing_driver = str(diagnosis.get("billing_driver") or "")
@@ -145,6 +154,25 @@ def render_dashboard_summary_html(source_label: str, diagnosis: dict[str, Any], 
     subtype = str(diagnosis.get("workflow_subtype") or "")
     evidence_html = dashboard_case_evidence_chips(case_evidence) or (dashboard_subtype_html(subtype) + dashboard_evidence_chips(evidence_metrics))
     workflow_label = str(diagnosis.get("workflow_pattern_label") or diagnosis.get("top_driver") or "None detected")
+    process_shape = str(diagnosis.get("process_shape") or "")
+    attribution_quality = diagnosis.get("attribution_quality") if isinstance(diagnosis.get("attribution_quality"), dict) else {}
+    value_evidence = diagnosis.get("value_evidence") if isinstance(diagnosis.get("value_evidence"), dict) else {}
+    risk_signals = diagnosis.get("risk_signals") if isinstance(diagnosis.get("risk_signals"), list) else []
+    risk_names = [
+        str(item.get("name"))
+        for item in risk_signals
+        if isinstance(item, dict) and item.get("name")
+    ][:3]
+    process_risk_html = ""
+    if process_shape or risk_names:
+        process_risk_html = (
+            '<p class="dashboard-detail">'
+            + (f"Process: {html.escape(process_shape)}" if process_shape else "")
+            + (f"<br>Risk: {html.escape(' + '.join(risk_names))}" if risk_names else "")
+            + (f"<br>Attribution: {html.escape(str(attribution_quality.get('level')))}" if attribution_quality.get("level") else "")
+            + (f"<br>Value evidence: {html.escape(str(value_evidence.get('level')))}" if value_evidence.get("level") else "")
+            + "</p>"
+        )
     confidence = str(diagnosis.get("confidence") or "")
     confidence_html = f'<p class="dashboard-detail">{html.escape(confidence)} confidence</p>' if confidence else ""
     drilldown = (
@@ -190,11 +218,12 @@ def render_dashboard_summary_html(source_label: str, diagnosis: dict[str, Any], 
       <div>
         <p><strong>{html.escape(str(diagnosis.get("next_action", "Inspect the top session.")))}</strong></p>
         <p class="muted">{html.escape(str(diagnosis.get("workflow_pattern", "")))}</p>
+        {process_risk_html}
         {billing_note_html}
       </div>
       <div>
-        <strong>Avoid next time</strong>
-        <ul>{avoid_items or "<li>Inspect the top session before changing workflow.</li>"}</ul>
+        <strong>Remember next time</strong>
+        <ul>{lesson_items or avoid_items or "<li>Inspect the top session before changing workflow.</li>"}</ul>
       </div>
     </div>
   </section>
@@ -236,6 +265,12 @@ def dashboard_summary_from_overview(overview: dict[str, Any]) -> dict[str, Any]:
         likely_causes = case_file.get("likely_causes") if isinstance(case_file.get("likely_causes"), list) else []
         cause = likely_causes[0] if likely_causes and isinstance(likely_causes[0], dict) else {}
         recommendations_from_case = case_file.get("recommendations") if isinstance(case_file.get("recommendations"), list) else []
+        next_run_plan = case_file.get("next_run_plan") if isinstance(case_file.get("next_run_plan"), list) else []
+        workflow_lessons = case_file.get("workflow_lessons") if isinstance(case_file.get("workflow_lessons"), list) else []
+        process_summary = case_file.get("process_summary") if isinstance(case_file.get("process_summary"), dict) else {}
+        risk_signals = case_file.get("risk_signals") if isinstance(case_file.get("risk_signals"), list) else []
+        attribution_quality = case_file.get("attribution_quality") if isinstance(case_file.get("attribution_quality"), dict) else {}
+        value_evidence = case_file.get("value_evidence") if isinstance(case_file.get("value_evidence"), dict) else {}
         evidence = case_file.get("evidence") if isinstance(case_file.get("evidence"), list) else []
         return {
             "sessions_analyzed": _as_int(summary.get("sessions_analyzed")),
@@ -249,8 +284,13 @@ def dashboard_summary_from_overview(overview: dict[str, Any]) -> dict[str, Any]:
             "evidence_metrics": {},
             "why": str(cause.get("why") or "No likely workflow cause was detected yet."),
             "workflow_pattern": "",
-            "next_action": str(recommendations_from_case[0]) if recommendations_from_case else str(recommendations[0]) if recommendations else "Inspect the top session.",
+            "next_action": str(next_run_plan[0]) if next_run_plan else str(recommendations_from_case[0]) if recommendations_from_case else str(recommendations[0]) if recommendations else "Inspect the top session.",
             "avoid_next_time": [str(item) for item in recommendations_from_case[1:3]],
+            "workflow_lessons": workflow_lessons,
+            "process_shape": str(process_summary.get("shape") or ""),
+            "risk_signals": risk_signals,
+            "attribution_quality": attribution_quality,
+            "value_evidence": value_evidence,
             "recommendations": [str(item) for item in recommendations_from_case] or recommendations,
             "billing_note": "",
         }
@@ -275,6 +315,11 @@ def dashboard_summary_from_overview(overview: dict[str, Any]) -> dict[str, Any]:
             "workflow_pattern": f"Workflow pattern: {human_diagnosis.get('workflow_failure') or ''}",
             "next_action": str(next_actions[0]) if next_actions else str(recommendations[0]) if recommendations else "Inspect the top session.",
             "avoid_next_time": [str(item) for item in avoid_next_time],
+            "workflow_lessons": [],
+            "process_shape": "",
+            "risk_signals": [],
+            "attribution_quality": {},
+            "value_evidence": {},
             "recommendations": list(dict.fromkeys([str(item) for item in next_actions] + [str(item) for item in recommendations])),
             "billing_note": str(human_diagnosis.get("billing_note") or ""),
         }
@@ -361,6 +406,11 @@ def dashboard_summary_from_overview(overview: dict[str, Any]) -> dict[str, Any]:
         "workflow_pattern": str(diagnosis["workflow_pattern"]),
         "next_action": str(recommendations[0]) if recommendations else str(diagnosis["next_action"]),
         "avoid_next_time": list(diagnosis["avoid_next_time"]),
+        "workflow_lessons": [],
+        "process_shape": "",
+        "risk_signals": [],
+        "attribution_quality": {},
+        "value_evidence": {},
         "recommendations": recommendations,
     }
 

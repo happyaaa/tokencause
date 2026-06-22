@@ -4,11 +4,11 @@
 
 [English](README.md)
 
-诊断你的 AI 编程会话为什么烧 token。
+诊断一次 AI 编程会话的 token 花得值不值，以及下次该怎么改。
 
-TokenCause 是一个本地优先的 token 成本 root-cause analysis CLI。它不是只告诉你“花了多少”，而是解释 Claude Code、Codex 或其他 AI coding / agent session 里的 token 到底花在了哪里：重复上下文、超长命令输出、大文件、失败重试、贵模型误用。
+TokenCause 是一个本地优先的 AI coding session diagnosis CLI。它不是只告诉你“花了多少”，而是解释 Claude Code、Codex 或其他 coding-agent session 为什么变贵、变慢、变危险、变得难以理解：重复上下文、超长命令输出、大文件、失败重试、宽泛探索、session drift、贵模型误用。
 
-大多数 usage 工具告诉你花了多少。TokenCause 告诉你为什么。
+大多数 usage 工具告诉你花了多少。TokenCause 告诉你这次 session 的 token 花得值不值，为什么贵，以及下次应该沉淀成什么 workflow lesson。
 
 ![TokenCause demo dashboard](docs/assets/demo-dashboard.png)
 
@@ -18,7 +18,8 @@ TokenCause 关注 usage accounting 工具通常回答不了的诊断层：
 
 - 为什么这次 session 这么贵？
 - 是哪些文件、命令、重试、重复上下文导致成本上升？
-- 下一次应该怎么改 workflow，避免同样的 token 浪费？
+- 哪些 token 是必要探索，哪些来自可避免的 workflow 形状？
+- 这个 repo 或 workflow 下一次应该记住什么 lesson？
 
 ## 它会检测什么
 
@@ -28,6 +29,8 @@ TokenCause 关注 usage accounting 工具通常回答不了的诊断层：
 - **Retry/failure cost**：失败 patch、重复测试、重复命令、retry loop。
 - **Model mismatch**：search、read、route、summary、纯格式化任务用了昂贵模型。
 - **Session drift**：会话后半段 token 越来越多，但有效进展变少。
+- **Engineering process shape**：discovery-heavy、debug-heavy、implementation-without-verification、review-light 这类工程过程形状。
+- **Review risk signals**：弱验证、敏感区域、大 review surface、上下文污染、retry loop、generated artifact 等风险信号。
 
 ## 快速开始
 
@@ -68,7 +71,7 @@ tokencause dashboard --json
 
 `dashboard` 默认会写出本地 HTML dashboard：`reports/tokencause-dashboard.html`。
 
-dashboard 开头会先给诊断，而不只是表格：最可能的 top cost driver、为什么发生、背后的 workflow pattern、下一步动作，以及下次怎么避免同样的 token 浪费。
+dashboard 开头会先给诊断，而不只是表格：最可能的 top cost driver、为什么发生、背后的 workflow pattern、process shape、risk signals、下一步动作，以及下一次应该复用的 workflow lesson。
 
 单个 session report 会明确区分 token 口径：provider/model billed counters、observable transcript tokens、cache tokens，以及 TokenCause 的 estimated waste signal。estimated waste 是诊断信号，不是账单总额。
 
@@ -140,7 +143,7 @@ recommended actions:
 - 给失败重试加预算护栏
 ```
 
-当前报告是 diagnosis-first。dashboard 可以展示趋势，但最先有价值的问题通常是：为什么这次 session 变贵？TokenCause 会保留 observability 数据层，然后把最大的 cost driver 翻译成 workflow diagnosis。
+当前报告是 diagnosis-first。dashboard 可以展示趋势，但最先有价值的问题通常是：为什么这次 session 变贵、这次探索值不值、下次应该改变什么？TokenCause 会保留 observability 数据层，然后把最大的 cost driver 翻译成 workflow diagnosis 和可复用 lesson。
 
 ## 当前输入
 
@@ -328,6 +331,7 @@ Overview 页面和 JSON 只展示 token 最高的前 20 个 sessions，但 cost-
 近期重点：
 
 - 继续加深 Codex 和 Claude Code session diagnosis
+- 把重复出现的诊断沉淀成 reusable workflow lessons
 - 让 dashboard 更容易按项目扫描
 - 改进文件 carryover 和 session drift 的证据表达
 - 只在数据源能提供足够 trace metadata 时，再接入更多 AI coding session 来源

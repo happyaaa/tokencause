@@ -136,6 +136,43 @@ def report_actionable_driver_rows(view: SessionReportView, limit: int = 6) -> li
     ]
 
 
+def report_process_rows(view: SessionReportView) -> list[tuple[str, str]]:
+    rows = [("Shape", view.case_file.process_summary.shape), ("Narrative", view.case_file.process_summary.narrative)]
+    for phase in view.case_file.process_summary.phases:
+        if phase.tokens <= 0 and phase.events <= 0:
+            continue
+        evidence = "; ".join(phase.evidence[:2])
+        detail = f"{compact_number(phase.tokens)} tokens ({phase.share:.0%}), {phase.events} event(s)"
+        if evidence:
+            detail += f" - {evidence}"
+        rows.append((phase.name.replace("_", " ").title(), detail))
+    return rows
+
+
+def report_risk_rows(view: SessionReportView) -> list[tuple[str, str]]:
+    rows: list[tuple[str, str]] = []
+    for risk in view.case_file.risk_signals:
+        evidence = "; ".join(short_preview(item, 140) for item in risk.evidence[:3])
+        detail = f"{risk.severity} - {risk.why}"
+        if evidence:
+            detail += f" Evidence: {evidence}"
+        rows.append((risk.name, detail))
+    return rows
+
+
+def report_attribution_quality_rows(view: SessionReportView) -> list[tuple[str, str]]:
+    quality = view.case_file.attribution_quality
+    value = view.case_file.value_evidence
+    signals = "; ".join(value.signals[:3]) or "No strong efficiency warning signal detected."
+    return [
+        ("Attribution Quality", f"{quality.level} - {quality.reason}"),
+        ("Unclassified Process Share", f"{quality.unclassified_share:.0%}"),
+        ("Assistant/Other Token Share", f"{quality.assistant_or_other_share:.0%}"),
+        ("Value Evidence", f"{value.level} - {value.why}"),
+        ("Value Signals", signals),
+    ]
+
+
 def report_billing_rows(view: SessionReportView) -> list[tuple[str, str]]:
     rows = [
         ("model billed tokens", compact_number(view.scope.model_billed_tokens)),
@@ -157,10 +194,10 @@ def report_attribution_rows(view: SessionReportView) -> list[tuple[str, str]]:
         ("billing/cache tokens", compact_number(view.scope.cache_tokens)),
         ("model output tokens", compact_number(view.scope.model_output_tokens)),
         (
-            "diagnostic coverage",
-            f"{compact_number(view.scope.diagnostic_coverage_tokens)} observable tokens matched one or more drivers ({view.scope.diagnostic_coverage_share:.0%})",
+            "driver match coverage",
+            f"{compact_number(view.scope.diagnostic_coverage_tokens)} observable tokens matched one or more diagnostic categories",
         ),
-        ("scope note", "Diagnostic coverage is not waste. Driver categories can overlap and this is not a billing total."),
+        ("scope note", "Driver match coverage is not waste. Categories can overlap and this is not a billing total."),
     ]
 
 
@@ -264,7 +301,47 @@ def render_session_report_markdown(view: SessionReportView) -> str:
         else:
             lines.append("- No high-signal evidence detected.")
 
-    lines.extend(["", "## Cause Sentence", view.case_file.cause_sentence])
+    lines.extend(["", "## Attribution Quality"])
+    quality = view.case_file.attribution_quality
+    lines.append(f"- **{quality.level}:** {quality.reason}")
+    lines.append(f"- **Unclassified process share:** {quality.unclassified_share:.0%}")
+    lines.append(f"- **Assistant/other token share:** {quality.assistant_or_other_share:.0%}")
+
+    lines.extend(["", "## Value Evidence"])
+    value = view.case_file.value_evidence
+    lines.append(f"- **{value.level}:** {value.why}")
+    for signal in value.signals:
+        lines.append(f"  - {signal}")
+
+    lines.extend(["", "## Next Run Plan"])
+    if view.case_file.next_run_plan:
+        lines.extend(f"{index}. {item}" for index, item in enumerate(view.case_file.next_run_plan, start=1))
+    else:
+        lines.append("1. Inspect the largest commands, files, and repeated context.")
+
+    lines.extend(["", "## Engineering Process"])
+    lines.append(f"**{view.case_file.process_summary.shape}**")
+    lines.extend(["", view.case_file.process_summary.narrative])
+    for phase in view.case_file.process_summary.phases:
+        if phase.tokens <= 0 and phase.events <= 0:
+            continue
+        lines.append(
+            f"- **{phase.name.replace('_', ' ').title()}:** {compact_number(phase.tokens)} tokens "
+            f"({phase.share:.0%}), {phase.events} event(s)"
+        )
+        for item in phase.evidence[:2]:
+            lines.append(f"  - {item}")
+
+    lines.extend(["", "## Risk Signals"])
+    if view.case_file.risk_signals:
+        for risk in view.case_file.risk_signals:
+            lines.append(f"- **{risk.name} ({risk.severity}):** {risk.why}")
+            for item in risk.evidence[:3]:
+                lines.append(f"  - {short_preview(item, 180)}")
+    else:
+        lines.append("- No high-signal risk detected.")
+
+    lines.extend(["", "## Diagnostic Trace", view.case_file.cause_sentence])
 
     project_source_rows = report_project_source_carryover_rows(view)
     lines.extend(["", "## Project Source Carryover"])
@@ -290,11 +367,13 @@ def render_session_report_markdown(view: SessionReportView) -> str:
     else:
         lines.append("- No clear context drift timeline detected.")
 
-    lines.extend(["", "## Next Run Plan"])
-    if view.case_file.recommendations:
-        lines.extend(f"- {item}" for item in view.case_file.recommendations[:4])
+    lines.extend(["", "## Reusable Workflow Lessons"])
+    if view.case_file.workflow_lessons:
+        for lesson in view.case_file.workflow_lessons:
+            lines.append(f"- **{lesson.title}:** {lesson.lesson}")
+            lines.append(f"  - Trigger: {lesson.trigger}")
     else:
-        lines.append("- Inspect the largest commands, files, and repeated context.")
+        lines.append("- No reusable workflow lesson detected.")
 
     lines.extend(
         [
@@ -303,13 +382,13 @@ def render_session_report_markdown(view: SessionReportView) -> str:
             f"- **Actionable observable tokens:** {compact_number(view.scope.observable_tokens)}",
             f"- **Billing/cache tokens:** {compact_number(view.scope.cache_tokens)}",
             f"- **Model output tokens:** {compact_number(view.scope.model_output_tokens)}",
-            f"- **Diagnostic coverage:** {compact_number(view.scope.diagnostic_coverage_tokens)} observable tokens matched one or more drivers ({view.scope.diagnostic_coverage_share:.0%} of observable)",
+            f"- **Driver match coverage:** {compact_number(view.scope.diagnostic_coverage_tokens)} observable tokens matched one or more diagnostic categories",
             "",
             "## Billing / Accounting",
             f"- **Model billed tokens:** {compact_number(view.scope.model_billed_tokens)}",
             f"- **Cached input tokens:** {compact_number(view.scope.cache_tokens)}",
             f"- **Observable transcript tokens:** {compact_number(view.scope.observable_tokens)}",
-            "- Diagnostic coverage is not waste. Driver categories can overlap and this is not a billing total.",
+            "- Driver match coverage is not waste. Categories can overlap and this is not a billing total.",
         ]
     )
 
@@ -343,6 +422,17 @@ def render_session_report_html(view: SessionReportView) -> str:
     likely_cause_title = (likely_cause.name if likely_cause else "") or "No likely cause identified"
     likely_cause_confidence = (likely_cause.confidence if likely_cause else "") or ""
     likely_cause_why = (likely_cause.why if likely_cause else "") or "TokenCause did not find enough evidence for a clear workflow cause."
+    if view.case_file.attribution_quality.level == "low":
+        source_label = {
+            "claude": "Claude transcript",
+            "codex": "Codex transcript",
+        }.get(view.trace.source, "Transcript")
+        likely_cause_title = f"{source_label} attribution is too coarse"
+    diagnosis_kicker = (
+        "Diagnosis limited - low attribution quality"
+        if view.case_file.attribution_quality.level == "low"
+        else f"Likely cause{f' - {likely_cause_confidence} confidence' if likely_cause_confidence else ''}"
+    )
     case_evidence_items = [
         f"<li><strong>{html.escape(item.name)}:</strong> {html.escape(item.value)}"
         + (f'<div class="muted">{html.escape(short_preview(item.detail, 180))}</div>' if item.detail else "")
@@ -356,7 +446,18 @@ def render_session_report_html(view: SessionReportView) -> str:
             for driver in view.drivers
             if driver.name != "Cache-heavy context"
         ][:4]
-    case_recommendations = view.case_file.recommendations[:4] or ["Inspect the largest commands, files, and repeated context."]
+    case_recommendations = view.case_file.next_run_plan[:5] or view.case_file.recommendations[:4] or ["Inspect the largest commands, files, and repeated context."]
+    workflow_lessons = view.case_file.workflow_lessons[:4]
+    workflow_lessons_html = (
+        "".join(
+            "<li>"
+            f"<strong>{html.escape(lesson.title)}:</strong> {html.escape(lesson.lesson)}"
+            f'<div class="muted">Trigger: {html.escape(short_preview(lesson.trigger, 180))}</div>'
+            "</li>"
+            for lesson in workflow_lessons
+        )
+        or "<li>No reusable workflow lesson detected.</li>"
+    )
     observed_rows = [
         (fact.name, f"{fact.value} - {fact.detail}" if fact.detail else fact.value)
         for fact in view.case_file.observed_facts
@@ -367,6 +468,9 @@ def render_session_report_html(view: SessionReportView) -> str:
     ]
     source_group_rows = observable_source_group_rows(view.category_tokens)
     actionable_driver_rows = report_actionable_driver_rows(view)
+    attribution_quality_rows = report_attribution_quality_rows(view)
+    process_rows = report_process_rows(view)
+    risk_rows = report_risk_rows(view)
     project_source_rows = report_project_source_carryover_rows(view)
     file_carryover_rows = report_file_carryover_rows(view)
     drift_timeline_rows = report_drift_timeline_rows(view)
@@ -498,7 +602,7 @@ def render_session_report_html(view: SessionReportView) -> str:
   <section class="report-hero">
     <div class="diagnosis-panel">
       <h1>{html.escape(view.heading)}</h1>
-      <div class="report-kicker">Likely cause{f' - {html.escape(likely_cause_confidence)} confidence' if likely_cause_confidence else ''}</div>
+      <div class="report-kicker">{html.escape(diagnosis_kicker)}</div>
       <section class="casefile">
         <span class="casefile-title">{html.escape(likely_cause_title)}</span>
         <p class="casefile-copy">{html.escape(likely_cause_why)}</p>
@@ -516,12 +620,32 @@ def render_session_report_html(view: SessionReportView) -> str:
       <section class="card"><ul>{''.join(case_evidence_items) if case_evidence_items else '<li>No high-signal evidence detected.</li>'}</ul></section>
     </div>
     <div>
-      <h2>Next Run Plan</h2>
-      <section class="card"><ul>{''.join(f'<li>{html.escape(item)}</li>' for item in case_recommendations)}</ul></section>
+      <h2>Attribution Quality & Value</h2>
+      <table>{html_rows(attribution_quality_rows)}</table>
     </div>
 
     <div class="wide">
-      <h2>Cause Sentence</h2>
+      <h2>Next Run Plan</h2>
+      <section class="card"><ol>{''.join(f'<li>{html.escape(item)}</li>' for item in case_recommendations)}</ol></section>
+    </div>
+
+    <div>
+      <h2>Risk Signals</h2>
+      <table>{html_rows(risk_rows) if risk_rows else '<tr><td>No high-signal risk detected.</td><td></td></tr>'}</table>
+    </div>
+
+    <div>
+      <h2>Engineering Process</h2>
+      <table>{html_rows(process_rows)}</table>
+    </div>
+
+    <div class="wide">
+      <h2>Reusable Workflow Lessons</h2>
+      <section class="card"><ul>{workflow_lessons_html}</ul></section>
+    </div>
+
+    <div class="wide">
+      <h2>Diagnostic Trace</h2>
       <section class="card">{html.escape(view.case_file.cause_sentence)}</section>
     </div>
 
