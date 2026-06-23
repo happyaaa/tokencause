@@ -10,6 +10,7 @@ import json
 import sqlite3
 import sys
 import time
+import webbrowser
 from datetime import datetime, timezone
 from collections import Counter, defaultdict
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
@@ -307,6 +308,8 @@ def doctor_next_commands(statuses: list[dict[str, Any]]) -> list[str]:
     if has_local_sessions:
         commands.extend(
             [
+                "tokencause report --last --open",
+                "tokencause overview --session-reports --open",
                 "tokencause serve",
                 "tokencause dashboard --session-reports",
                 "tokencause dashboard --json",
@@ -851,6 +854,66 @@ def command_dashboard(args: argparse.Namespace) -> int:
         print(f"error: {exc}", file=sys.stderr)
         return 1
     return 0
+
+
+def open_html_path(path: Path) -> None:
+    webbrowser.open(path.expanduser().resolve(strict=False).as_uri())
+
+
+def command_report(args: argparse.Namespace) -> int:
+    try:
+        if args.source != "auto":
+            source = args.source
+        elif args.thread_id:
+            source = "codex"
+        elif args.session_id or args.session_file:
+            source = "claude"
+        else:
+            source = dashboard_source_from_args(args)
+    except ValueError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 1
+
+    out_path = Path(args.out or "reports/tokencause-report.html")
+    try:
+        out_path.parent.mkdir(parents=True, exist_ok=True)
+        if source == "codex":
+            codex_home = Path(args.codex_home).expanduser() if args.codex_home else None
+            prices = load_codex_price_config(Path(args.price_config).expanduser()) if args.price_config else CodexPriceConfig()
+            thread = pick_codex_thread(codex_home, last=True, thread_id=args.thread_id)
+            report = parse_codex_rollout(thread)
+            out_path.write_text(render_codex_html_report(report, prices=prices), encoding="utf-8")
+        else:
+            claude_home = Path(args.claude_home).expanduser() if args.claude_home else None
+            prices = load_claude_price_config(Path(args.price_config).expanduser()) if args.price_config else ClaudePriceConfig()
+            session = pick_claude_session(
+                claude_home,
+                last=True,
+                session_id=args.session_id,
+                session_file=args.session_file,
+            )
+            events = parse_claude_jsonl(session)
+            out_path.write_text(render_claude_html_report(session, events, prices=prices), encoding="utf-8")
+    except (OSError, sqlite3.Error, ValueError) as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 1
+
+    print(f"source: {source}")
+    print(f"html report: {out_path}")
+    if args.open:
+        open_html_path(out_path)
+        print(f"opened: {out_path}")
+    return 0
+
+
+def command_overview(args: argparse.Namespace) -> int:
+    if not args.out and not args.json:
+        args.out = "reports/tokencause-overview.html"
+    result = command_dashboard(args)
+    if result == 0 and args.open and not args.json:
+        open_html_path(Path(args.out or "reports/tokencause-overview.html"))
+        print(f"opened: {args.out or 'reports/tokencause-overview.html'}")
+    return result
 
 
 def command_dashboard_demo(args: argparse.Namespace) -> int:
@@ -1648,6 +1711,59 @@ def build_parser() -> argparse.ArgumentParser:
     dashboard_parser.add_argument("--price-config", help="Optional Codex or Claude price config JSON file.")
     dashboard_parser.add_argument("--demo", action="store_true", help="Write a synthetic demo dashboard without reading local sessions.")
     dashboard_parser.set_defaults(func=command_dashboard)
+
+    report_parser = subparsers.add_parser("report", help="Write a local HTML diagnosis report for the latest AI coding session.")
+    report_parser.add_argument(
+        "--source",
+        choices=("auto", "codex", "claude"),
+        default="auto",
+        help="Local session source to analyze. Defaults to auto.",
+    )
+    report_parser.add_argument("--last", action="store_true", help="Report on the latest available session. This is the default.")
+    report_parser.add_argument("--codex-home", help="Codex home directory. Defaults to ~/.codex.")
+    report_parser.add_argument("--claude-home", help="Claude home directory. Defaults to ~/.claude.")
+    report_parser.add_argument("--thread-id", help="Report on a specific Codex thread id or id prefix.")
+    report_parser.add_argument("--session-id", help="Report on a specific Claude session id or id prefix.")
+    report_parser.add_argument("--session-file", help="Report on a specific Claude JSONL session file.")
+    report_parser.add_argument("--cwd", help="Only consider sessions whose working directory matches this project path.")
+    report_parser.add_argument("--project", help="Only consider sessions matching this project name or path.")
+    report_parser.add_argument("--limit", type=int, default=20, help="Number of recent sessions to inspect when auto-selecting a source.")
+    report_parser.add_argument("--out", help="Write the HTML report to this path. Defaults to reports/tokencause-report.html.")
+    report_parser.add_argument("--open", action="store_true", help="Open the generated HTML report in the default browser.")
+    report_parser.add_argument("--price-config", help="Optional Codex or Claude price config JSON file.")
+    report_parser.set_defaults(func=command_report)
+
+    overview_parser = subparsers.add_parser("overview", help="Write a local HTML overview across recent AI coding sessions.")
+    overview_parser.add_argument(
+        "--source",
+        choices=("auto", "codex", "claude"),
+        default="auto",
+        help="Local session source to analyze. Defaults to auto.",
+    )
+    overview_parser.add_argument("--codex-home", help="Codex home directory. Defaults to ~/.codex.")
+    overview_parser.add_argument("--claude-home", help="Claude home directory. Defaults to ~/.claude.")
+    overview_parser.add_argument("--limit", type=int, default=20, help="Number of recent sessions to analyze.")
+    overview_parser.add_argument("--cwd", help="Only include sessions whose working directory matches this project path.")
+    overview_parser.add_argument("--project", help="Only include sessions matching this project name or path.")
+    overview_parser.add_argument(
+        "--cache-dir",
+        default=".tokencause-cache/codex",
+        help="Directory for parsed Codex session cache. Defaults to .tokencause-cache/codex.",
+    )
+    overview_parser.add_argument("--no-cache", action="store_true", help="Disable parsed Codex session cache.")
+    overview_parser.add_argument(
+        "--session-reports",
+        action="store_true",
+        help="Also write linked per-session HTML reports next to the overview.",
+    )
+    overview_parser.add_argument(
+        "--out",
+        help="Write the overview to this path. Defaults to reports/tokencause-overview.html for HTML; JSON prints to stdout unless --out is set.",
+    )
+    overview_parser.add_argument("--json", action="store_true", help="Print machine-readable JSON instead of writing HTML by default.")
+    overview_parser.add_argument("--open", action="store_true", help="Open the generated HTML overview in the default browser.")
+    overview_parser.add_argument("--price-config", help="Optional Codex or Claude price config JSON file.")
+    overview_parser.set_defaults(func=command_overview)
 
     serve_parser = subparsers.add_parser("serve", help="Serve the local AI coding session dashboard on localhost.")
     serve_parser.add_argument(

@@ -446,17 +446,18 @@ def build_codex_session_report_view(
         )
         for artifact in report.repeated_artifacts[:10]
     ]
+    scope = diagnostic_coverage_scope(trace, drivers, estimated_cost_usd=estimated_cost, attribution_quality=case_file.attribution_quality)
     metric_cards = [
-        ("Thread tokens", compact_number(report.thread.tokens_used)),
-        ("Observable tokens", compact_number(report.observable_tokens)),
-        ("Model total tokens", compact_number(report.model_total_tokens)),
-        ("Estimated cost" if estimated_cost is not None else "Cached input tokens", money(estimated_cost) if estimated_cost is not None else compact_number(report.cached_input_tokens)),
+        ("Model usage tokens", compact_number(scope.model_billed_tokens)),
+        ("Visible transcript tokens", compact_number(scope.observable_tokens)),
+        ("Classifiable tokens", compact_number(scope.classifiable_tokens)),
+        ("estimated cost" if estimated_cost is not None else "Cached input tokens", money(estimated_cost) if estimated_cost is not None else compact_number(scope.cache_tokens)),
     ]
     return SessionReportView(
         heading="TokenCause Diagnosis",
         session_rows=[
             ("Session", report.thread.id),
-            ("Title", short_preview(report.thread.title, 160)),
+            ("Title", short_preview(report.thread.title, 80)),
             ("CWD", report.thread.cwd),
             ("Rollout", str(report.thread.rollout_path)),
         ],
@@ -464,7 +465,7 @@ def build_codex_session_report_view(
         case_file=case_file,
         trace=trace,
         drivers=drivers,
-        scope=diagnostic_coverage_scope(trace, drivers, estimated_cost_usd=estimated_cost),
+        scope=scope,
         category_tokens=Counter(report.category_tokens),
         appendix_sections=[
             SessionReportAppendix("Top Files / Artifacts", file_rows),

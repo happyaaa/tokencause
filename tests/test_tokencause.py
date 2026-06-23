@@ -758,7 +758,7 @@ class TokenCauseTests(unittest.TestCase):
         overview = render_claude_overview_html([(session, events)], prices=prices)
 
         self.assertAlmostEqual(claude_estimated_cost(events, prices), 4.89)
-        self.assertIn("Estimated cost", html)
+        self.assertIn("estimated cost", html)
         self.assertIn("$4.8900", html)
         self.assertIn("$4.8900", overview)
 
@@ -1113,7 +1113,7 @@ class TokenCauseTests(unittest.TestCase):
         payload = tokencause.session_case_file_to_json(case_file)
 
         self.assertEqual(payload["session_id"], "case-1")
-        self.assertIn("Observable tokens", [fact["name"] for fact in payload["observed_facts"]])
+        self.assertIn("visible transcript tokens", [fact["name"] for fact in payload["observed_facts"]])
         self.assertIn("search_output", [item["name"] for item in payload["token_attribution"]])
         self.assertIn("Broad exploration", [item["name"] for item in payload["evidence"]])
         self.assertTrue(payload["likely_causes"][0]["confidence"])
@@ -1612,11 +1612,11 @@ class TokenCauseTests(unittest.TestCase):
         self.assertIn("Tool results", html)
         self.assertIn("Appendix: Raw Token Categories", html)
         self.assertIn("Limits", html)
-        self.assertIn("Actionable Drivers", html)
+        self.assertIn("Directional Signals", html)
         self.assertIn('class="driver-card"', html)
         self.assertIn("Billing / Accounting", html)
         self.assertIn("Next Run Plan", html)
-        self.assertIn("Estimated cost", html)
+        self.assertIn("estimated cost", html)
         self.assertIn(self.generated_by_text(), html)
         self.assertIn("Appendix: Top Commands", html)
         self.assertIn('class="bar-track"', html)
@@ -1814,6 +1814,8 @@ class TokenCauseTests(unittest.TestCase):
                 connection.commit()
             out_path = root / "dashboard.html"
             json_out_path = root / "dashboard.json"
+            top_report_path = root / "top-report.html"
+            top_overview_path = root / "top-overview.html"
 
             html_cli = self.run_cli(
                 "dashboard",
@@ -1851,6 +1853,29 @@ class TokenCauseTests(unittest.TestCase):
                 str(json_out_path),
                 "--no-cache",
             )
+            top_report_cli = self.run_cli(
+                "report",
+                "--source",
+                "codex",
+                "--codex-home",
+                str(codex_home),
+                "--thread-id",
+                "thread-dashboard",
+                "--out",
+                str(top_report_path),
+            )
+            top_overview_cli = self.run_cli(
+                "overview",
+                "--source",
+                "codex",
+                "--codex-home",
+                str(codex_home),
+                "--limit",
+                "1",
+                "--out",
+                str(top_overview_path),
+                "--no-cache",
+            )
 
             self.assertEqual(html_cli.returncode, 0, html_cli.stdout + html_cli.stderr)
             self.assertIn("dashboard: ", html_cli.stdout)
@@ -1871,6 +1896,14 @@ class TokenCauseTests(unittest.TestCase):
             payload = json.loads(json_cli.stdout)
             self.assertEqual(json_out_cli.returncode, 0, json_out_cli.stdout + json_out_cli.stderr)
             self.assertEqual(json.loads(json_out_cli.stdout), json.loads(json_out_path.read_text(encoding="utf-8")))
+            self.assertEqual(top_report_cli.returncode, 0, top_report_cli.stdout + top_report_cli.stderr)
+            self.assertIn("html report: ", top_report_cli.stdout)
+            self.assertTrue(top_report_path.exists())
+            self.assertIn("TokenCause Diagnosis", top_report_path.read_text(encoding="utf-8"))
+            self.assertEqual(top_overview_cli.returncode, 0, top_overview_cli.stdout + top_overview_cli.stderr)
+            self.assertIn("dashboard: ", top_overview_cli.stdout)
+            self.assertTrue(top_overview_path.exists())
+            self.assertIn("TokenCause Dashboard", top_overview_path.read_text(encoding="utf-8"))
         self.assertEqual(payload["kind"], "dashboard")
         self.assertEqual(payload["source"], "codex")
         self.assertEqual(payload["summary"]["sessions_analyzed"], 1)

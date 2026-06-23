@@ -107,9 +107,9 @@ def _confidence(evidence_count: int, drivers: list[CostDriver]) -> str:
 
 def _observed_facts(trace: SessionTrace) -> list[ObservedFact]:
     facts = [
-        ObservedFact("Observable tokens", compact_number(trace.observable_tokens), "Estimated from visible session events."),
-        ObservedFact("Model total tokens", compact_number(trace.model_total_tokens), "Provider/model counters when present."),
-        ObservedFact("Cached input tokens", compact_number(trace.cached_input_tokens), "Provider/model cache counters when present."),
+        ObservedFact("visible transcript tokens", compact_number(trace.observable_tokens), "Estimated from visible session events."),
+        ObservedFact("model usage tokens", compact_number(trace.model_total_tokens), "Provider/model counters when present."),
+        ObservedFact("cached input tokens", compact_number(trace.cached_input_tokens), "Provider/model cache counters when present."),
         ObservedFact("Events", str(len(trace.events)), "Normalized events in the canonical SessionTrace."),
     ]
     if trace.cwd:
@@ -254,7 +254,18 @@ def _sentence_fragment(text: str) -> str:
     return text.rstrip(".")
 
 
-def build_cause_sentence(trace: SessionTrace, drivers: list[CostDriver], carryovers: list[FileCarryover]) -> str:
+def build_cause_sentence(
+    trace: SessionTrace,
+    drivers: list[CostDriver],
+    carryovers: list[FileCarryover],
+    attribution_quality: AttributionQuality | None = None,
+) -> str:
+    if attribution_quality and attribution_quality.level == "low":
+        return (
+            "TokenCause cannot make a high-confidence workflow cause claim because most observable tokens "
+            "came from assistant/context payloads that are not separable into concrete files, commands, and tool results. "
+            "Treat repeated context, retry, long-output, and drift signals as secondary evidence."
+        )
     parts: list[str] = []
     project_source_files = [
         item
@@ -467,7 +478,19 @@ def build_value_evidence(process_summary: ProcessSummary, risks: list[RiskSignal
     return ValueEvidence(level=level, why=why, signals=signals[:4])
 
 
-def build_next_run_plan(trace: SessionTrace, carryovers: list[FileCarryover], recommendations: list[str], risks: list[RiskSignal]) -> list[str]:
+def build_next_run_plan(
+    trace: SessionTrace,
+    carryovers: list[FileCarryover],
+    recommendations: list[str],
+    risks: list[RiskSignal],
+    attribution_quality: AttributionQuality | None = None,
+) -> list[str]:
+    if attribution_quality and attribution_quality.level == "low":
+        return [
+            "Treat this report as directional until the source transcript can separate files, commands, and tool results.",
+            "Start the next run from a short checkpoint summary instead of continuing the raw session.",
+            "Keep one validation command and summarize any large tool output before continuing.",
+        ]
     plan = ["Start from a 5-line checkpoint summary: goal, current hypothesis, touched files, open blocker, validation command."]
     project_sources = [
         item
@@ -535,14 +558,14 @@ def build_session_case_file(trace: SessionTrace, drivers: list[CostDriver] | Non
         evidence=evidence,
         drivers=drivers,
         likely_causes=likely_causes,
-        cause_sentence=build_cause_sentence(trace, drivers, file_carryovers),
+        cause_sentence=build_cause_sentence(trace, drivers, file_carryovers, attribution_quality),
         file_carryovers=file_carryovers,
         drift_timeline=drift_timeline,
         process_summary=process_summary,
         risk_signals=risk_signals,
         attribution_quality=attribution_quality,
         value_evidence=build_value_evidence(process_summary, risk_signals, drivers),
-        next_run_plan=build_next_run_plan(trace, file_carryovers, recommendations, risk_signals),
+        next_run_plan=build_next_run_plan(trace, file_carryovers, recommendations, risk_signals, attribution_quality),
         recommendations=recommendations,
         workflow_lessons=build_workflow_lessons(trace, drivers, file_carryovers, recommendations, attribution_quality),
         limits=limits,

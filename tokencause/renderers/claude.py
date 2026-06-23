@@ -271,8 +271,10 @@ def build_claude_session_report_view(
     by_file: Counter[str] = Counter()
     for event in events:
         by_model[event.model] += event.total_tokens
-        for file_ref in event.context_items:
-            by_file[file_ref] += event.total_tokens
+        file_refs = list(dict.fromkeys(event.context_items))
+        share = max(event.total_tokens // max(len(file_refs), 1), 1)
+        for file_ref in file_refs:
+            by_file[file_ref] += share
     model_rows = [
         (model, f"{compact_number(tokens)} tokens")
         for model, tokens in by_model.most_common(10)
@@ -284,7 +286,7 @@ def build_claude_session_report_view(
     file_rows = [
         (
             file_ref,
-            f"{tokens} tokens" + (f" — {file_risk_reason(file_ref)}" if file_risk_reason(file_ref) else ""),
+            f"{compact_number(tokens)} estimated share" + (f" — {file_risk_reason(file_ref)}" if file_risk_reason(file_ref) else ""),
         )
         for file_ref, tokens in by_file.most_common(10)
     ]
@@ -292,11 +294,13 @@ def build_claude_session_report_view(
     category_tokens = Counter()
     for event in trace.events:
         category_tokens[event.category] += event.tokens
-    scope = diagnostic_coverage_scope(trace, drivers, estimated_cost_usd=estimated_cost)
+    scope = diagnostic_coverage_scope(trace, drivers, estimated_cost_usd=estimated_cost, attribution_quality=case_file.attribution_quality)
     # Claude exposes cache writes separately; keep the report's cache field aligned with billing impact.
     scope = SessionReportScope(
         model_billed_tokens=scope.model_billed_tokens,
         observable_tokens=scope.observable_tokens,
+        classifiable_tokens=scope.classifiable_tokens,
+        actionable_diagnostic_tokens=scope.actionable_diagnostic_tokens,
         cache_tokens=cache_creation_tokens + cache_read_tokens,
         model_output_tokens=scope.model_output_tokens,
         diagnostic_coverage_tokens=scope.diagnostic_coverage_tokens,
@@ -304,10 +308,10 @@ def build_claude_session_report_view(
         estimated_cost_usd=scope.estimated_cost_usd,
     )
     metric_cards = [
-        ("Events", str(len(events))),
-        ("Observable tokens", compact_number(trace.observable_tokens)),
-        ("Input tokens", compact_number(input_tokens)),
-        ("Estimated cost" if estimated_cost is not None else "Output tokens", money(estimated_cost) if estimated_cost is not None else compact_number(output_tokens)),
+        ("Model usage tokens", compact_number(scope.model_billed_tokens)),
+        ("Visible transcript tokens", compact_number(scope.observable_tokens)),
+        ("Classifiable tokens", compact_number(scope.classifiable_tokens)),
+        ("estimated cost" if estimated_cost is not None else "Output tokens", money(estimated_cost) if estimated_cost is not None else compact_number(output_tokens)),
     ]
     return SessionReportView(
         heading="TokenCause Diagnosis",
@@ -332,7 +336,7 @@ def build_claude_session_report_view(
                     ("output tokens", compact_number(output_tokens)),
                     ("cache creation input tokens", compact_number(cache_creation_tokens)),
                     ("cache read input tokens", compact_number(cache_read_tokens)),
-                    ("estimated cost", money(estimated_cost) if estimated_cost is not None else money(analysis.total_cost)),
+                    ("estimated cost", money(estimated_cost) if estimated_cost is not None else "not estimated"),
                 ],
             ),
             SessionReportAppendix("Token Breakdown By Model", model_rows),

@@ -4,39 +4,23 @@
 
 [English](README.md)
 
-诊断一次 AI 编程会话的 token 花得值不值，以及下次该怎么改。
+本地 AI coding session 复盘工具。
 
-TokenCause 是一个本地优先的 AI coding session diagnosis CLI。它不是只告诉你“花了多少”，而是解释 Claude Code、Codex 或其他 coding-agent session 为什么变贵、变慢、变危险、变得难以理解：重复上下文、超长命令输出、大文件、失败重试、宽泛探索、session drift、贵模型误用。
+TokenCause 读取本地 Codex 和 Claude Code 会话，解释一次 run 为什么变贵、变吵、或者不可信。
 
-大多数 usage 工具告诉你花了多少。TokenCause 告诉你这次 session 的 token 花得值不值，为什么贵，以及下次应该沉淀成什么 workflow lesson。
+它回答五个问题：
+
+- 这次 session 为什么变贵？
+- 哪些文件烧掉了上下文？
+- 哪些命令输出了大量噪音？
+- 哪里在没有新证据的情况下反复 retry？
+- 下一次 session 应该怎么开？
 
 ![TokenCause demo dashboard](docs/assets/demo-dashboard.png)
 
-## 为什么是 TokenCause
-
-TokenCause 关注 usage accounting 工具通常回答不了的诊断层：
-
-- 为什么这次 session 这么贵？
-- 是哪些文件、命令、重试、重复上下文导致成本上升？
-- 哪些 token 是必要探索，哪些来自可避免的 workflow 形状？
-- 这个 repo 或 workflow 下一次应该记住什么 lesson？
-
-## 它会检测什么
-
-- **Repeated context**：同样的文件片段、prompt、工具输出、错误日志反复进入上下文。
-- **Long tool output**：测试日志、构建日志、安装日志、grep 结果、命令输出占据大量 token。
-- **Expensive files**：lockfile、generated file、大 JSON、fixture、snapshot、schema、minified asset。
-- **Retry/failure cost**：失败 patch、重复测试、重复命令、retry loop。
-- **Model mismatch**：search、read、route、summary、纯格式化任务用了昂贵模型。
-- **Session drift**：会话后半段 token 越来越多，但有效进展变少。
-- **Engineering process shape**：discovery-heavy、debug-heavy、implementation-without-verification、review-light 这类工程过程形状。
-- **Review risk signals**：弱验证、敏感区域、大 review surface、上下文污染、retry loop、generated artifact 等风险信号。
-
 ## 快速开始
 
-最快 demo，不需要本机已有 Codex 或 Claude Code 历史：
-
-直接从源码运行：
+先跑 demo：
 
 ```bash
 git clone https://github.com/happyaaa/tokencause.git
@@ -44,106 +28,67 @@ cd tokencause
 python3 tokencause.py serve --demo
 ```
 
-或者先安装本地 CLI：
+安装本地 CLI：
 
 ```bash
 python3 -m venv .venv
 source .venv/bin/activate
 python -m pip install -e .
-tokencause serve --demo
 ```
 
-然后再分析真实本地 sessions：
+分析你自己的本地 AI coding sessions：
 
 ```bash
 tokencause doctor
+tokencause report --last --open
+tokencause overview --session-reports --open
+```
+
+`report` 生成单个本地诊断报告。`overview` 生成多 session 总览。两者都会自动优先使用本地 Codex sessions；没有 Codex 时再使用 Claude Code。
+
+## 你会看到什么
+
+报告开头直接给最有用的部分：
+
+- likely cause
+- strongest evidence
+- attribution quality
+- value judgment
+- next run plan
+- reusable workflow lesson
+
+底层会检测 repeated context、长命令输出、昂贵文件、失败重试、宽泛探索、session drift、弱验证、大 review surface、上下文污染等信号。
+
+## 高级用法
+
+启动本地 server：
+
+```bash
 tokencause serve
 ```
 
-`serve` 会自动优先使用最近的本地 Codex sessions；如果没有 Codex session，就使用最近的 Claude Code sessions。它会把本地 dashboard site 写到 `reports/tokencause-site`，并默认在 `http://127.0.0.1:8787/` 启动。
-
-如果你只想生成静态文件或 JSON，不想启动 server：
+生成静态 dashboard 文件或 JSON：
 
 ```bash
 tokencause dashboard --session-reports
 tokencause dashboard --json
 ```
 
-`dashboard` 默认会写出本地 HTML dashboard：`reports/tokencause-dashboard.html`。
-
-dashboard 开头会先给诊断，而不只是表格：最可能的 top cost driver、为什么发生、背后的 workflow pattern、process shape、risk signals、下一步动作，以及下一次应该复用的 workflow lesson。
-
-单个 session report 会明确区分 token 口径：provider/model billed counters、observable transcript tokens、cache tokens，以及 TokenCause 的 estimated waste signal。estimated waste 是诊断信号，不是账单总额。
-
-检查 TokenCause 能看到哪些本地数据源：
-
-```bash
-tokencause doctor
-tokencause doctor --json
-```
-
-检查已安装 CLI 版本：
-
-```bash
-tokencause --version
-```
-
-如果你手上已经有单独的 JSONL trace，可以这样分析：
+分析单独的 TokenCause session trace：
 
 ```bash
 tokencause analyze examples/tokencause_trace.jsonl --budget 2
-```
-
-从通用 trace 直接输出 Markdown 报告：
-
-```bash
-tokencause analyze examples/tokencause_trace.jsonl --budget 2 --markdown
-```
-
-输出机器可读 JSON，方便接脚本、CI 或你自己的 dashboard：
-
-```bash
-tokencause dashboard --json
 tokencause analyze examples/tokencause_trace.jsonl --budget 2 --json
 ```
 
-所有 JSON 输出的根对象都会包含 `schema_version` 和 `version`，方便下游工具把数据结构变更和 CLI 版本区分开。输出契约见 [docs/JSON_OUTPUT.md](docs/JSON_OUTPUT.md)。
-
-不想启动 server，只想生成 demo/static artifacts：
+生成 demo/static artifacts：
 
 ```bash
 tokencause dashboard --demo
 tokencause demo-site
 ```
 
-更多 demo 命令见 [docs/DEMO.md](docs/DEMO.md)。
-
-## 示例输出
-
-```text
-TokenCause
-input: examples/tokencause_trace.jsonl
-events: 5
-total cost: $2.5200
-total tokens: 67600
-total latency: 86.0s
-estimated savings: $1.8900
-budget: $2.0000
-
-findings:
-- [warning] 超过预算
-- [warning] 昂贵模型可能用于低价值步骤
-- [info] 发现重复上下文
-- [warning] 存在失败步骤
-
-recommended actions:
-- 把低风险步骤降级到便宜模型
-- 缓存重复上下文或稳定摘要
-- 把反复读取的文件压缩成 memo
-- 给失败重试加预算护栏
-```
-
-当前报告是 diagnosis-first。dashboard 可以展示趋势，但最先有价值的问题通常是：为什么这次 session 变贵、这次探索值不值、下次应该改变什么？TokenCause 会保留 observability 数据层，然后把最大的 cost driver 翻译成 workflow diagnosis 和可复用 lesson。
+所有 JSON 输出的根对象都会包含 `schema_version` 和 `version`，方便下游工具把数据结构变更和 CLI 版本区分开。输出契约见 [docs/JSON_OUTPUT.md](docs/JSON_OUTPUT.md)。更多 demo 命令见 [docs/DEMO.md](docs/DEMO.md)。
 
 ## 当前输入
 

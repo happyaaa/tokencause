@@ -4,39 +4,23 @@
 
 [中文文档](README.zh-CN.md)
 
-Diagnose whether an AI coding session was worth its tokens, and what to change next time.
+AI coding session postmortems, locally.
 
-TokenCause is a local-first diagnosis CLI for AI coding sessions. It explains not just where tokens went in Claude Code, Codex, and other coding-agent runs, but why the session became expensive, slow, risky, or hard to reason about: repeated context, long command output, expensive files, retry loops, broad exploration, session drift, and model mismatch.
+TokenCause reads local Codex and Claude Code sessions and explains why a run got expensive, noisy, or hard to trust.
 
-Most usage tools tell you how much you spent. TokenCause tells you whether the session was worth its tokens, what made it expensive, and which workflow lesson to reuse next time.
+It answers five questions:
+
+- Why did this session get expensive?
+- Which files burned context?
+- Which commands dumped noisy output?
+- Where did retries happen without new evidence?
+- What should change before the next run?
 
 ![TokenCause demo dashboard](docs/assets/demo-dashboard.png)
 
-## Why TokenCause
-
-TokenCause focuses on the diagnostic layer that usage accounting tools usually do not answer:
-
-- Why did this session get expensive?
-- Which files, commands, retries, or repeated contexts drove the cost?
-- Which tokens were necessary exploration, and which came from avoidable workflow shape?
-- What lesson should this repo or workflow remember for the next AI coding session?
-
-## What It Detects
-
-- **Repeated context**: same file chunks, prompts, tool outputs, or errors repeatedly entering context.
-- **Long tool output**: test logs, build logs, install logs, grep output, or command output dominating token spend.
-- **Expensive files**: lockfiles, generated files, large JSON fixtures, snapshots, schemas, or minified assets.
-- **Retry/failure cost**: failed patches, repeated tests, repeated commands, or retry loops.
-- **Model mismatch**: expensive models used for search, read, route, summarize, or formatting-only work.
-- **Session drift**: long sessions where later turns spend more tokens while making less progress.
-- **Engineering process shape**: discovery-heavy, debug-heavy, implementation-without-verification, or review-light sessions.
-- **Review risk signals**: weak verification, sensitive areas, large review surface, context pollution, retry loops, or generated artifacts.
-
 ## Quick Start
 
-Fastest demo, with no local Codex or Claude Code history required:
-
-Run from source:
+Try the demo first:
 
 ```bash
 git clone https://github.com/happyaaa/tokencause.git
@@ -44,106 +28,67 @@ cd tokencause
 python3 tokencause.py serve --demo
 ```
 
-Or install the local CLI first:
+Install the local CLI:
 
 ```bash
 python3 -m venv .venv
 source .venv/bin/activate
 python -m pip install -e .
-tokencause serve --demo
 ```
 
-Then point TokenCause at real local sessions:
+Run it on your local AI coding sessions:
 
 ```bash
 tokencause doctor
+tokencause report --last --open
+tokencause overview --session-reports --open
+```
+
+`report` writes one local diagnosis report. `overview` writes a multi-session overview. Both auto-select Codex first when local sessions exist, then Claude Code.
+
+## What You Get
+
+A report starts with the useful part:
+
+- likely cause
+- strongest evidence
+- attribution quality
+- value judgment
+- next run plan
+- reusable workflow lesson
+
+Under the hood it can detect repeated context, long command output, expensive files, retry/failure loops, broad exploration, session drift, weak verification, large review surfaces, and context pollution.
+
+## Advanced
+
+Use a local server:
+
+```bash
 tokencause serve
 ```
 
-`serve` automatically uses recent local Codex sessions when available, otherwise recent Claude Code sessions. It writes a local dashboard site under `reports/tokencause-site` and serves it at `http://127.0.0.1:8787/` by default.
-
-If you only want static files or JSON without running a server:
+Write static dashboard files or JSON:
 
 ```bash
 tokencause dashboard --session-reports
 tokencause dashboard --json
 ```
 
-`dashboard` writes a local HTML dashboard to `reports/tokencause-dashboard.html` by default.
-
-The dashboard starts with a diagnosis, not just a table: the likely top cost driver, why it happened, the workflow pattern behind it, process shape, risk signals, the next action, and the reusable workflow lesson to carry into the next session.
-
-Session reports separate token scopes: provider/model billed counters, observable transcript tokens, cache tokens, and TokenCause's estimated waste signal. Estimated waste is diagnostic, not a billing total.
-
-Check what local sources TokenCause can see:
-
-```bash
-tokencause doctor
-tokencause doctor --json
-```
-
-Check the installed CLI version:
-
-```bash
-tokencause --version
-```
-
-Analyze a standalone TokenCause session trace when you have one:
+Analyze a standalone TokenCause session trace:
 
 ```bash
 tokencause analyze examples/tokencause_trace.jsonl --budget 2
-```
-
-Print a Markdown report from a TokenCause session trace:
-
-```bash
-tokencause analyze examples/tokencause_trace.jsonl --budget 2 --markdown
-```
-
-Print machine-readable JSON for scripts, CI, or your own dashboard:
-
-```bash
-tokencause dashboard --json
 tokencause analyze examples/tokencause_trace.jsonl --budget 2 --json
 ```
 
-All JSON outputs include `schema_version` and `version` at the root so downstream tools can handle format changes separately from CLI releases. See [docs/JSON_OUTPUT.md](docs/JSON_OUTPUT.md) for the output contract.
-
-No server needed? Generate demo/static artifacts instead:
+Generate demo/static artifacts:
 
 ```bash
 tokencause dashboard --demo
 tokencause demo-site
 ```
 
-More demo commands are in [docs/DEMO.md](docs/DEMO.md).
-
-## Example Output
-
-```text
-TokenCause
-input: examples/tokencause_trace.jsonl
-events: 5
-total cost: $2.5200
-total tokens: 86100
-total latency: 101.0s
-estimated savings: $1.8900
-budget: $2.0000
-
-findings:
-- [warning] Budget exceeded
-- [warning] Expensive model may be used for low-value steps
-- [info] Repeated context detected
-- [warning] Failed steps detected
-
-recommended actions:
-- Downgrade low-risk steps to cheaper models
-- Cache repeated context or stable summaries
-- Compress repeatedly-read files into memos
-- Add budget guards to retries
-```
-
-The current reports are intentionally diagnosis-first. A dashboard can show trends, but the first useful question is usually: why did this session get expensive, was the exploration worth it, and what should change next time? TokenCause keeps the observability layer visible, then turns the largest cost driver into a workflow diagnosis and reusable lesson.
+All JSON outputs include `schema_version` and `version` at the root so downstream tools can handle format changes separately from CLI releases. See [docs/JSON_OUTPUT.md](docs/JSON_OUTPUT.md) for the output contract. More demo commands are in [docs/DEMO.md](docs/DEMO.md).
 
 ## Current Inputs
 
