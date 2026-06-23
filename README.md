@@ -4,6 +4,8 @@
 
 [中文文档](README.zh-CN.md)
 
+![TokenCause hero](assets/hero.png)
+
 AI coding session postmortems, locally.
 
 TokenCause reads local Codex and Claude Code sessions and explains why a run got expensive, noisy, or hard to trust.
@@ -16,32 +18,42 @@ It answers five questions:
 - Where did retries happen without new evidence?
 - What should change before the next run?
 
-![TokenCause demo dashboard](docs/assets/demo-dashboard.png)
-
 ## Quick Start
 
-Try the demo first:
+Run TokenCause directly with `uvx` after the first PyPI release:
 
 ```bash
-git clone https://github.com/happyaaa/tokencause.git
-cd tokencause
-python3 tokencause.py serve --demo
+uvx tokencause report --last --open
 ```
 
-Install the local CLI:
+Or install it as a persistent CLI:
 
 ```bash
-python3 -m venv .venv
-source .venv/bin/activate
-python -m pip install -e .
+uv tool install tokencause
+# or
+pipx install tokencause
 ```
 
-Run it on your local AI coding sessions:
+Until the first PyPI release is published, install from GitHub:
+
+```bash
+pipx install git+https://github.com/happyaaa/tokencause
+```
+
+Then run it on your local AI coding sessions:
 
 ```bash
 tokencause doctor
 tokencause report --last --open
 tokencause overview --session-reports --open
+```
+
+Or clone the repo and try the demo:
+
+```bash
+git clone https://github.com/happyaaa/tokencause.git
+cd tokencause
+python3 tokencause.py serve --demo
 ```
 
 `report` writes one local diagnosis report. `overview` writes a multi-session overview. Both auto-select Codex first when local sessions exist, then Claude Code.

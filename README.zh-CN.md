@@ -4,6 +4,8 @@
 
 [English](README.md)
 
+![TokenCause hero](assets/hero.png)
+
 本地 AI coding session 复盘工具。
 
 TokenCause 读取本地 Codex 和 Claude Code 会话，解释一次 run 为什么变贵、变吵、或者不可信。
@@ -16,32 +18,42 @@ TokenCause 读取本地 Codex 和 Claude Code 会话，解释一次 run 为什�
 - 哪里在没有新证据的情况下反复 retry？
 - 下一次 session 应该怎么开？
 
-![TokenCause demo dashboard](docs/assets/demo-dashboard.png)
-
 ## 快速开始
 
-先跑 demo：
+第一次发布到 PyPI 之后，可以直接用 `uvx` 运行：
 
 ```bash
-git clone https://github.com/happyaaa/tokencause.git
-cd tokencause
-python3 tokencause.py serve --demo
+uvx tokencause report --last --open
 ```
 
-安装本地 CLI：
+或者安装成长期可用的 CLI：
 
 ```bash
-python3 -m venv .venv
-source .venv/bin/activate
-python -m pip install -e .
+uv tool install tokencause
+# 或者
+pipx install tokencause
 ```
 
-分析你自己的本地 AI coding sessions：
+在第一次 PyPI release 发布前，可以先从 GitHub 安装：
+
+```bash
+pipx install git+https://github.com/happyaaa/tokencause
+```
+
+然后分析你自己的本地 AI coding sessions：
 
 ```bash
 tokencause doctor
 tokencause report --last --open
 tokencause overview --session-reports --open
+```
+
+或者 clone repo 跑 demo：
+
+```bash
+git clone https://github.com/happyaaa/tokencause.git
+cd tokencause
+python3 tokencause.py serve --demo
 ```
 
 `report` 生成单个本地诊断报告。`overview` 生成多 session 总览。两者都会自动优先使用本地 Codex sessions；没有 Codex 时再使用 Claude Code。
