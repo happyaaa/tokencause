@@ -1,5 +1,6 @@
 # TokenCause
 
+[![PyPI](https://img.shields.io/pypi/v/tokencause.svg)](https://pypi.org/project/tokencause/)
 [![tests](https://github.com/happyaaa/tokencause/actions/workflows/test.yml/badge.svg)](https://github.com/happyaaa/tokencause/actions/workflows/test.yml)
 
 [中文文档](README.zh-CN.md)
@@ -20,13 +21,17 @@ It answers five questions:
 
 ## Quick Start
 
-Run TokenCause directly with `uvx` after the first PyPI release:
+Run it once with `uvx`:
 
 ```bash
+uvx tokencause doctor
 uvx tokencause report --last --open
+uvx tokencause overview --session-reports --open
 ```
 
-Or install it as a persistent CLI:
+`doctor` checks whether TokenCause can find local Codex or Claude Code sessions. `report` opens one session diagnosis. `overview` opens a multi-session overview.
+
+Install it as a persistent CLI:
 
 ```bash
 uv tool install tokencause
@@ -34,13 +39,7 @@ uv tool install tokencause
 pipx install tokencause
 ```
 
-Until the first PyPI release is published, install from GitHub:
-
-```bash
-pipx install git+https://github.com/happyaaa/tokencause
-```
-
-Then run it on your local AI coding sessions:
+Then run:
 
 ```bash
 tokencause doctor
@@ -48,12 +47,12 @@ tokencause report --last --open
 tokencause overview --session-reports --open
 ```
 
-Or clone the repo and try the demo:
+TokenCause is local-first. It reads local Codex/Claude Code session files and does not upload your code or conversations.
+
+No local AI coding sessions yet? Try the demo:
 
 ```bash
-git clone https://github.com/happyaaa/tokencause.git
-cd tokencause
-python3 tokencause.py serve --demo
+uvx tokencause demo-site
 ```
 
 `report` writes one local diagnosis report. `overview` writes a multi-session overview. Both auto-select Codex first when local sessions exist, then Claude Code.

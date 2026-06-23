@@ -1,5 +1,6 @@
 # TokenCause
 
+[![PyPI](https://img.shields.io/pypi/v/tokencause.svg)](https://pypi.org/project/tokencause/)
 [![tests](https://github.com/happyaaa/tokencause/actions/workflows/test.yml/badge.svg)](https://github.com/happyaaa/tokencause/actions/workflows/test.yml)
 
 [English](README.md)
@@ -20,13 +21,17 @@ TokenCause 读取本地 Codex 和 Claude Code 会话，解释一次 run 为什�
 
 ## 快速开始
 
-第一次发布到 PyPI 之后，可以直接用 `uvx` 运行：
+用 `uvx` 直接跑一次：
 
 ```bash
+uvx tokencause doctor
 uvx tokencause report --last --open
+uvx tokencause overview --session-reports --open
 ```
 
-或者安装成长期可用的 CLI：
+`doctor` 会检查 TokenCause 能不能找到本地 Codex 或 Claude Code sessions。`report` 打开单个 session 诊断报告。`overview` 打开多 session 总览。
+
+安装成长期可用的 CLI：
 
 ```bash
 uv tool install tokencause
@@ -34,13 +39,7 @@ uv tool install tokencause
 pipx install tokencause
 ```
 
-在第一次 PyPI release 发布前，可以先从 GitHub 安装：
-
-```bash
-pipx install git+https://github.com/happyaaa/tokencause
-```
-
-然后分析你自己的本地 AI coding sessions：
+然后运行：
 
 ```bash
 tokencause doctor
@@ -48,12 +47,12 @@ tokencause report --last --open
 tokencause overview --session-reports --open
 ```
 
-或者 clone repo 跑 demo：
+TokenCause 是 local-first 工具。它读取本地 Codex / Claude Code session 文件，不会上传你的代码或对话。
+
+如果本机还没有 AI coding sessions，可以先跑 demo：
 
 ```bash
-git clone https://github.com/happyaaa/tokencause.git
-cd tokencause
-python3 tokencause.py serve --demo
+uvx tokencause demo-site
 ```
 
 `report` 生成单个本地诊断报告。`overview` 生成多 session 总览。两者都会自动优先使用本地 Codex sessions；没有 Codex 时再使用 Claude Code。
