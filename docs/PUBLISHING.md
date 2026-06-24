@@ -7,7 +7,7 @@ TokenCause is a Python CLI package. The recommended public install path is PyPI 
 After publishing to PyPI:
 
 ```bash
-uvx tokencause report --last --open
+uvx tokencause open
 uv tool install tokencause
 pipx install tokencause
 ```
@@ -42,13 +42,13 @@ The workflow builds from a GitHub Release and publishes with `pypa/gh-action-pyp
    python -m unittest discover -s tests
    ```
 
-4. Create a GitHub Release for the same version tag, for example `v0.1.0`.
+4. Create a GitHub Release for the same version tag, for example `v0.1.1`.
 5. Confirm the `publish` workflow passes.
 6. Test the public install:
 
    ```bash
    uvx tokencause --version
-   uvx tokencause doctor
+   uvx tokencause open
    ```
 
 ## Why Not npm First?

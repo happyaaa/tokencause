@@ -21,15 +21,25 @@ TokenCause 读取本地 Codex 和 Claude Code 会话，解释一次 run 为什�
 
 ## 快速开始
 
-用 `uvx` 直接跑一次：
+直接打开最合适的本地报告：
+
+```bash
+uvx tokencause open
+```
+
+`open` 会自动找到最近的本地 Codex 或 Claude Code session，生成 HTML 诊断报告并打开。如果本机没有 local sessions，它会打开一个明确标注的内置假数据 demo。
+
+检查 TokenCause 能看到什么：
 
 ```bash
 uvx tokencause doctor
-uvx tokencause report --last --open
-uvx tokencause overview --session-reports --open
 ```
 
-`doctor` 会检查 TokenCause 能不能找到本地 Codex 或 Claude Code sessions。`report` 打开单个 session 诊断报告。`overview` 打开多 session 总览。
+生成多 session 总览：
+
+```bash
+uvx tokencause overview --session-reports --open
+```
 
 安装成长期可用的 CLI：
 
@@ -42,6 +52,7 @@ pipx install tokencause
 然后运行：
 
 ```bash
+tokencause open
 tokencause doctor
 tokencause report --last --open
 tokencause overview --session-reports --open
@@ -49,11 +60,13 @@ tokencause overview --session-reports --open
 
 TokenCause 是 local-first 工具。它读取本地 Codex / Claude Code session 文件，不会上传你的代码或对话。
 
-如果本机还没有 AI coding sessions，可以先跑 demo：
+如果本机还没有 AI coding sessions，`open` 会 fallback 到内置假数据 demo。你也可以直接生成这个 demo：
 
 ```bash
 uvx tokencause demo-site
 ```
+
+demo 使用的是内置假数据，不是你的本地 sessions。命令会打印生成的 `index.html` 路径。
 
 `report` 生成单个本地诊断报告。`overview` 生成多 session 总览。两者都会自动优先使用本地 Codex sessions；没有 Codex 时再使用 Claude Code。
 

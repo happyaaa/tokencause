@@ -308,6 +308,7 @@ def doctor_next_commands(statuses: list[dict[str, Any]]) -> list[str]:
     if has_local_sessions:
         commands.extend(
             [
+                "tokencause open",
                 "tokencause report --last --open",
                 "tokencause overview --session-reports --open",
                 "tokencause serve",
@@ -316,7 +317,7 @@ def doctor_next_commands(statuses: list[dict[str, Any]]) -> list[str]:
             ]
         )
     elif has_examples:
-        commands.append("tokencause serve --demo")
+        commands.append("tokencause open")
     if status_ok(statuses, "Codex sessions"):
         commands.extend(
             [
@@ -343,7 +344,7 @@ def doctor_next_commands(statuses: list[dict[str, Any]]) -> list[str]:
             ]
         )
     if not commands:
-        commands.append("tokencause --help")
+        commands.append("tokencause open")
     return commands
 
 
@@ -914,6 +915,47 @@ def command_overview(args: argparse.Namespace) -> int:
         open_html_path(Path(args.out or "reports/tokencause-overview.html"))
         print(f"opened: {args.out or 'reports/tokencause-overview.html'}")
     return result
+
+
+def command_open(args: argparse.Namespace) -> int:
+    try:
+        source = dashboard_source_from_args(args)
+    except ValueError as exc:
+        if args.source != "auto":
+            print(f"error: {exc}", file=sys.stderr)
+            return 1
+        demo_dir = Path(args.out or "reports/tokencause-demo-site")
+        try:
+            site = write_demo_site(demo_dir)
+        except OSError as write_exc:
+            print(f"error: {write_exc}", file=sys.stderr)
+            return 1
+        print("mode: synthetic demo")
+        print("note: demo uses bundled fake data, not your local sessions.")
+        print(f"demo dashboard: {site['index']}")
+        print(f"demo json: {site['json']}")
+        if not args.no_open:
+            open_html_path(Path(site["index"]))
+            print(f"opened: {site['index']}")
+        return 0
+
+    report_args = argparse.Namespace(
+        source=source,
+        last=True,
+        codex_home=args.codex_home,
+        claude_home=args.claude_home,
+        thread_id=None,
+        session_id=None,
+        session_file=None,
+        cwd=args.cwd,
+        project=args.project,
+        limit=args.limit,
+        out=args.out or "reports/tokencause-report.html",
+        open=not args.no_open,
+        price_config=args.price_config,
+    )
+    print("mode: local session report")
+    return command_report(report_args)
 
 
 def command_dashboard_demo(args: argparse.Namespace) -> int:
@@ -1679,6 +1721,29 @@ def build_parser() -> argparse.ArgumentParser:
     doctor_parser.add_argument("--price-config", help="Optional price config path to check.")
     doctor_parser.add_argument("--json", action="store_true", help="Print machine-readable JSON instead of text.")
     doctor_parser.set_defaults(func=command_doctor)
+
+    open_parser = subparsers.add_parser(
+        "open",
+        help="Open the best available TokenCause report, or a synthetic demo when no local sessions exist.",
+    )
+    open_parser.add_argument(
+        "--source",
+        choices=("auto", "codex", "claude"),
+        default="auto",
+        help="Local session source to analyze. Defaults to auto.",
+    )
+    open_parser.add_argument("--codex-home", help="Codex home directory. Defaults to ~/.codex.")
+    open_parser.add_argument("--claude-home", help="Claude home directory. Defaults to ~/.claude.")
+    open_parser.add_argument("--cwd", help="Only consider sessions whose working directory matches this project path.")
+    open_parser.add_argument("--project", help="Only consider sessions matching this project name or path.")
+    open_parser.add_argument("--limit", type=int, default=20, help="Number of recent sessions to inspect when auto-selecting a source.")
+    open_parser.add_argument(
+        "--out",
+        help="Output path. For local sessions this is an HTML report path; for demo fallback this is a site directory.",
+    )
+    open_parser.add_argument("--no-open", action="store_true", help="Write the report without opening a browser.")
+    open_parser.add_argument("--price-config", help="Optional Codex or Claude price config JSON file.")
+    open_parser.set_defaults(func=command_open)
 
     dashboard_parser = subparsers.add_parser("dashboard", help="Open the local AI coding session dashboard.")
     dashboard_parser.add_argument(

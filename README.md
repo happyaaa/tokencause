@@ -21,15 +21,25 @@ It answers five questions:
 
 ## Quick Start
 
-Run it once with `uvx`:
+Open the best available local report:
+
+```bash
+uvx tokencause open
+```
+
+`open` finds your latest local Codex or Claude Code session, writes an HTML diagnosis report, and opens it. If no local sessions exist, it opens a clearly labeled synthetic demo instead.
+
+Check what TokenCause can see:
 
 ```bash
 uvx tokencause doctor
-uvx tokencause report --last --open
-uvx tokencause overview --session-reports --open
 ```
 
-`doctor` checks whether TokenCause can find local Codex or Claude Code sessions. `report` opens one session diagnosis. `overview` opens a multi-session overview.
+Generate a multi-session overview:
+
+```bash
+uvx tokencause overview --session-reports --open
+```
 
 Install it as a persistent CLI:
 
@@ -42,6 +52,7 @@ pipx install tokencause
 Then run:
 
 ```bash
+tokencause open
 tokencause doctor
 tokencause report --last --open
 tokencause overview --session-reports --open
@@ -49,11 +60,13 @@ tokencause overview --session-reports --open
 
 TokenCause is local-first. It reads local Codex/Claude Code session files and does not upload your code or conversations.
 
-No local AI coding sessions yet? Try the demo:
+No local AI coding sessions yet? `open` falls back to a synthetic demo. You can also write that demo directly:
 
 ```bash
 uvx tokencause demo-site
 ```
+
+The demo uses fake bundled data, not your local sessions. It prints the generated `index.html` path.
 
 `report` writes one local diagnosis report. `overview` writes a multi-session overview. Both auto-select Codex first when local sessions exist, then Claude Code.
 

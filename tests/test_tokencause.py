@@ -236,6 +236,65 @@ class TokenCauseTests(unittest.TestCase):
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
             self.assertEqual(json.loads(result.stdout), json.loads(out_path.read_text(encoding="utf-8")))
 
+    def test_open_command_falls_back_to_synthetic_demo_without_sessions(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            demo_dir = root / "demo"
+            result = self.run_cli(
+                "open",
+                "--codex-home",
+                str(root / ".codex"),
+                "--claude-home",
+                str(root / ".claude"),
+                "--out",
+                str(demo_dir),
+                "--no-open",
+            )
+
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assertIn("mode: synthetic demo", result.stdout)
+            self.assertIn("not your local sessions", result.stdout)
+            self.assertTrue((demo_dir / "index.html").exists())
+            self.assertTrue((demo_dir / "dashboard.json").exists())
+            self.assertTrue((demo_dir / "codex-sessions").is_dir())
+
+    def test_open_command_writes_local_codex_report_when_sessions_exist(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            codex_home = root / ".codex"
+            codex_home.mkdir()
+            rollout = codex_home / "rollout.jsonl"
+            rollout.write_text(
+                "\n".join(
+                    [
+                        '{"timestamp":"2026-06-12T00:00:00Z","type":"event_msg","payload":{"type":"user_message","message":"Please inspect src/app.py"}}',
+                        '{"timestamp":"2026-06-12T00:00:01Z","type":"response_item","payload":{"type":"function_call","name":"exec_command","arguments":"{\\"cmd\\":\\"rg -n TODO src\\"}","call_id":"c1"}}',
+                        '{"timestamp":"2026-06-12T00:00:02Z","type":"response_item","payload":{"type":"function_call_output","call_id":"c1","output":"src/app.py:1:TODO\\n"}}',
+                        '{"timestamp":"2026-06-12T00:00:03Z","type":"event_msg","payload":{"type":"token_count","info":{"last_token_usage":{"input_tokens":1000,"cached_input_tokens":200,"output_tokens":100,"total_tokens":1100}}}}',
+                    ]
+                ),
+                encoding="utf-8",
+            )
+            load_temp_codex_thread(codex_home, rollout, root)
+            out_path = root / "report.html"
+
+            result = self.run_cli(
+                "open",
+                "--codex-home",
+                str(codex_home),
+                "--claude-home",
+                str(root / ".claude"),
+                "--out",
+                str(out_path),
+                "--no-open",
+            )
+
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assertIn("mode: local session report", result.stdout)
+            self.assertIn("source: codex", result.stdout)
+            self.assertTrue(out_path.exists())
+            self.assertIn("TokenCause Diagnosis", out_path.read_text(encoding="utf-8"))
+
     def test_doctor_reports_local_source_availability(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -311,7 +370,7 @@ class TokenCauseTests(unittest.TestCase):
         self.assertTrue(price_config["optional"])
         self.assertFalse(price_config["ok"])
         self.assertTrue(payload["ok"])
-        self.assertEqual(payload["next_commands"][0], "tokencause serve --demo")
+        self.assertEqual(payload["next_commands"][0], "tokencause open")
         self.assertIn("tokencause dashboard --demo", payload["next_commands"])
         self.assertIn("tokencause demo-site", payload["next_commands"])
         self.assertIn("tokencause analyze examples/tokencause_trace.jsonl --budget 2", payload["next_commands"])

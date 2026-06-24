@@ -4,6 +4,14 @@ All notable TokenCause changes are tracked here.
 
 ## Unreleased
 
+## 0.1.1 - 2026-06-24
+
+- Added `tokencause open` as the lowest-friction entry point. It opens the latest local Codex/Claude Code diagnosis report, or falls back to a clearly labeled synthetic demo when no local sessions exist.
+- Updated `tokencause doctor` next-command suggestions to point users toward `tokencause open`.
+- Simplified the README quick start around `uvx tokencause open`.
+
+## 0.1.0 - 2026-06-23
+
 - Added diagnosis-first Codex and Claude local session analysis.
 - Added a top-level `tokencause dashboard` command that auto-selects local Codex or Claude Code sessions.
 - Added `tokencause serve` for a localhost dashboard site with linked session diagnosis reports.
